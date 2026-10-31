@@ -1,0 +1,49 @@
+name: zizmor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/zizmor.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/zizmor.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: Audit GitHub Actions workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read   # checkout (job-level perms override workflow-level)
+      actions: read    # lets zizmor resolve action references through the GitHub API
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        # Static analysis of every workflow under .github/. advanced-security: false makes
+        # zizmor exit non-zero on any finding (template injection, dangerous trigger,
+        # unpinned action, credential persistence, ...), so this step blocks the PR on a new
+        # workflow-security regression; annotations: true surfaces each finding inline on the
+        # diff. The action's SARIF/code-scanning mode is deliberately not used: it does not
+        # fail the job, and blocking is the goal here. The pinned action version pins the
+        # zizmor release it runs.
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          advanced-security: false
+          annotations: true
