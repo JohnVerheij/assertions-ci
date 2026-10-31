@@ -1,0 +1,212 @@
+name: Package release
+description: >-
+  Releases one package repository of the family: version gate, release notes, build, tests, pack, CycloneDX SBOM
+  and OpenVEX per package, provenance and SBOM attestations, NuGet push through Trusted Publishing, and the GitHub
+  release. A dry-run stops before the attestations and uploads the packages, SBOMs, VEX documents and release notes
+  as a workflow artifact instead.
+
+# Runs inside the caller's job, so the OIDC token, the NuGet Trusted Publishing policy (repository, release.yml,
+# environment) and the attestation signer identity are the caller's. Same repository contract as package-ci.yml;
+# see README.md.
+
+inputs:
+  package:
+    description: Package name without the .TUnit suffix, for example LogAssertions.
+    required: true
+  has-core:
+    description: "'true' when the repository ships the framework-agnostic core package and its test project."
+    required: false
+    default: 'true'
+  dry-run:
+    description: "'true' to stop before the attestations: no NuGet push, no GitHub release, and no tag needed."
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: The released version (in a dry-run, the version the csproj files declare).
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+      run: |
+        if [[ ! "$PACKAGE" =~ ^[A-Z][A-Za-z0-9]*Assertions$ ]]; then
+          echo "::error::Input 'package' must be a package name such as LogAssertions, got '$PACKAGE'"
+          exit 1
+        fi
+
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+
+    - name: Verify tag matches package version
+      # Core and adapter ship in lockstep: both csproj files must declare the tag's version.
+      id: version
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        HAS_CORE: ${{ inputs.has-core }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../scripts/release_version.py"
+
+    - name: Extract release notes from CHANGELOG
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/package-release"
+        python3 "$GITHUB_ACTION_PATH/../../../scripts/release_notes.py" \
+          "$VERSION" CHANGELOG.md "$RUNNER_TEMP/package-release/RELEASE_NOTES.md"
+
+    - name: Restore
+      shell: bash
+      run: |
+        dotnet restore
+        dotnet tool restore
+
+    - name: Build
+      shell: bash
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test core suite
+      if: inputs.has-core == 'true'
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+      run: dotnet run --project "tests/${PACKAGE}.Tests/${PACKAGE}.Tests.csproj" --configuration Release --no-build
+
+    - name: Test adapter suite
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+      run: dotnet run --project "tests/${PACKAGE}.TUnit.Tests/${PACKAGE}.TUnit.Tests.csproj" --configuration Release --no-build
+
+    - name: Test snapshot suite
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+      run: |
+        dotnet run --project "tests/${PACKAGE}.TUnit.SnapshotTests/${PACKAGE}.TUnit.SnapshotTests.csproj" \
+          --configuration Release --no-build
+
+    - name: Pack, SBOM and VEX
+      # Each nupkg already carries an SPDX manifest (Microsoft.Sbom.Targets at pack time). The CycloneDX 1.6 SBOM
+      # ships next to it as a release asset for tooling that prefers CycloneDX. Build-time packages (analyzers,
+      # ILLink, the SBOM targets) are listed with scope "excluded", so the BOM is complete and still says what ships
+      # to consumers. The serial number stays in: actions/attest uses it to recognize a CycloneDX document.
+      # The OpenVEX document starts with no statements and gains one when a dependency CVE is assessed.
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        HAS_CORE: ${{ inputs.has-core }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        OUT="$RUNNER_TEMP/package-release"
+        IDS=("${PACKAGE}.TUnit")
+        if [ "$HAS_CORE" = true ]; then IDS=("$PACKAGE" "${PACKAGE}.TUnit"); fi
+        TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        for ID in "${IDS[@]}"; do
+          dotnet pack "src/${ID}/${ID}.csproj" --configuration Release --no-build --output "$OUT"
+          dotnet CycloneDX "src/${ID}/${ID}.csproj" -o "$OUT" -F Json -spv 1.6 \
+            -fn "${ID}.${VERSION}.cdx.json" --exclude-test-projects
+          cat > "$OUT/${ID}.${VERSION}.vex.json" <<EOF
+        {
+          "@context": "https://openvex.dev/ns/v0.2.0",
+          "@id": "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${ID}.${VERSION}.vex.json",
+          "author": "John Verheij",
+          "timestamp": "${TIMESTAMP}",
+          "version": 1,
+          "tooling": "Generated at release time; statements are added as dependency CVEs are assessed",
+          "statements": []
+        }
+        EOF
+          for FILE in "${ID}.${VERSION}.nupkg" "${ID}.${VERSION}.snupkg" "${ID}.${VERSION}.cdx.json"; do
+            if [ ! -f "$OUT/$FILE" ]; then
+              echo "::error::Expected release file $FILE was not produced"
+              exit 1
+            fi
+          done
+        done
+        ls -l "$OUT"
+
+    - name: Upload dry-run output
+      if: inputs.dry-run == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: release-dry-run
+        path: ${{ runner.temp }}/package-release
+        retention-days: 7
+        if-no-files-found: error
+
+    - name: Attest build provenance
+      # SLSA provenance for every shipped package, signed through Sigstore (keyless). Consumers verify with
+      #   gh attestation verify <file>.nupkg --repo <owner>/<repository>
+      if: inputs.dry-run != 'true'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: |
+          ${{ runner.temp }}/package-release/*.nupkg
+          ${{ runner.temp }}/package-release/*.snupkg
+
+    - name: Attest CycloneDX SBOM (core)
+      # Exact file names: sbom-path takes one file, and a <Package>.*.nupkg glob would also match the adapter.
+      if: inputs.dry-run != 'true' && inputs.has-core == 'true'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.${{ steps.version.outputs.version }}.nupkg
+        sbom-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.${{ steps.version.outputs.version }}.cdx.json
+
+    - name: Attest CycloneDX SBOM (adapter)
+      if: inputs.dry-run != 'true'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ steps.version.outputs.version }}.nupkg
+        sbom-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ steps.version.outputs.version }}.cdx.json
+
+    - name: NuGet login (Trusted Publishing)
+      # Exchanges the job's OIDC token for a short-lived NuGet API key; the trust policy on nuget.org names the
+      # caller's repository, release.yml and environment. No long-lived secret.
+      if: inputs.dry-run != 'true'
+      id: nuget-login
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+      with:
+        user: JohnVerheij
+
+    - name: Push to NuGet
+      # dotnet nuget push also pushes the matching .snupkg next to each .nupkg.
+      if: inputs.dry-run != 'true'
+      shell: bash
+      env:
+        NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+      run: |
+        dotnet nuget push "$RUNNER_TEMP"/package-release/*.nupkg \
+          --api-key "$NUGET_API_KEY" \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
+
+    - name: Create GitHub release
+      if: inputs.dry-run != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        TAG: ${{ github.ref_name }}
+        PRERELEASE: ${{ steps.version.outputs.prerelease }}
+      run: |
+        OUT="$RUNNER_TEMP/package-release"
+        FLAGS=()
+        if [ "$PRERELEASE" = true ]; then FLAGS+=(--prerelease); fi
+        gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$OUT/RELEASE_NOTES.md" "${FLAGS[@]}" \
+          "$OUT"/*.nupkg "$OUT"/*.snupkg "$OUT"/*.cdx.json "$OUT"/*.vex.json
