@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-31: reusable package CI workflow
+
+First release. The SseAssertions repository ran it as a pilot before release, including the Native AOT gate on
+Linux and the Codecov OIDC upload.
+
 ### Added
 
 - **`package-ci.yml`**, a reusable workflow that builds, tests and packs one package repository by convention
@@ -21,3 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native executable was produced, and runs it.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
+
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/JohnVerheij/assertions-ci/releases/tag/v1.0.0

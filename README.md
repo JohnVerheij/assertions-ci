@@ -1,8 +1,8 @@
 # assertions-ci
 
-Shared GitHub Actions building blocks for the [DotNetAssertions](https://dotnetassertions.dev) package family:
-a reusable CI workflow and composite actions for the release workflow, so a CI fix lands once instead of once per
-package repository.
+Shared GitHub Actions building blocks for the [DotNetAssertions](https://dotnetassertions.dev) package family,
+so a CI fix lands once instead of once per package repository. Today it holds the reusable CI workflow; composite
+actions for the release workflow follow in a later release.
 
 > **Scope:** internal tooling for the `*Assertions.TUnit` repositories. It is public so those public repositories
 > can call it. It is not a general-purpose product and makes no stability promise outside the family.
