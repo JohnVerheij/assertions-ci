@@ -1,0 +1,7 @@
+paths:
+  .github/workflows/package-ci.yml:
+    ignore:
+      # job.workflow_sha (the commit of this reusable workflow) is a GitHub context property that is newer
+      # than actionlint's context schema. It resolves at run time: the SseAssertions pilot (PR #238) checked
+      # out scripts/ through it. Remove this entry once actionlint knows the property.
+      - 'property "workflow_sha" is not defined'
