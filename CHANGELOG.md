@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-31: dependency graph and provenance bundles
+
+Minor release. Callers of `package-ci.yml` and `package-publish` need no change; `dependency-graph.yml` is opt-in
+through one job in the repository's `ci.yml`.
+
 ### Added
 
 - **`dependency-graph.yml`**, a reusable workflow that submits the resolved NuGet dependencies to GitHub's
@@ -72,6 +77,7 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JohnVerheij/assertions-ci/releases/tag/v1.0.0
