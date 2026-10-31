@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-31: release builds and the publish action
+
+Minor release: the release path for the package repositories. Callers of `package-ci.yml` need no change; a
+new, non-required `Upload coverage` check appears next to `Build, test & pack`.
+
 ### Added
 
 - **Release builds in `package-ci.yml`** (`release: true`). Every CI gate runs on the exact packages that ship, and
@@ -51,5 +56,6 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JohnVerheij/assertions-ci/releases/tag/v1.0.0
