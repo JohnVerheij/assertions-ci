@@ -8,6 +8,8 @@ name: Package CI
 #   tests/<Package>.TUnit.SnapshotTests public API snapshot tests
 #   tests/<Package>.TUnit.SmokeTest/    external consumer of the packed adapter, assembly Smoke.Consumer
 #   .config/codecoverage.settings.xml   coverage scope
+# With release: true it is also the build stage of a release: the same gates run on the exact packages that
+# ship. The build job never holds a credential; the Codecov upload runs in its own job.
 # See README.md for the caller contract.
 
 on:
@@ -42,6 +44,18 @@ on:
         required: false
         type: string
         default: ''
+      release:
+        description: Release build. Adds the version gate, release notes, a CycloneDX SBOM and an OpenVEX document per package, and uploads them with the packages and a SHA256SUMS file as the release-packages artifact. Skips the Codecov upload.
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      version:
+        description: The release version (release builds only).
+        value: ${{ jobs.build.outputs.version }}
+      checksum:
+        description: SHA-256 of the SHA256SUMS file in the release-packages artifact (release builds only).
+        value: ${{ jobs.build.outputs.checksum }}
 
 permissions:
   contents: read
@@ -52,8 +66,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: read   # checkout (job-level perms override workflow-level)
-      id-token: write  # Codecov upload through OIDC, so no token secret is needed
+      contents: read   # checkout only: build and test code never runs next to a credential
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      checksum: ${{ steps.release.outputs.checksum }}
     env:
       PACKAGE: ${{ inputs.package }}
       DOTNET_NOLOGO: 'true'
@@ -83,6 +99,25 @@ jobs:
           path: .assertions-ci
           sparse-checkout: scripts
           persist-credentials: false
+
+      - name: Release version gate
+        # Core and adapter ship in lockstep. On a tag, both csproj files must declare the tag's version; on a
+        # branch (a dry-run), they must agree with each other.
+        if: inputs.release
+        id: version
+        env:
+          HAS_CORE: ${{ inputs.has-core }}
+          DRY_RUN: ${{ github.ref_type != 'tag' }}
+        run: python3 .assertions-ci/scripts/release_version.py
+
+      - name: Release notes
+        # From the CHANGELOG section of the version; a missing or empty section fails the release.
+        if: inputs.release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          python3 .assertions-ci/scripts/release_notes.py "$VERSION" CHANGELOG.md "$RUNNER_TEMP/release/RELEASE_NOTES.md"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -153,17 +188,21 @@ jobs:
             echo "::error::Merged coverage report $MERGED was not produced"
             exit 1
           fi
-          echo "report=$MERGED" >> "$GITHUB_OUTPUT"
+          REPORT="$RUNNER_TEMP/coverage/coverage.cobertura.xml"
+          mkdir -p "$RUNNER_TEMP/coverage"
+          cp "$MERGED" "$REPORT"
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
           echo "Coverage report: $MERGED (from ${#REPORTS[@]} source report(s))"
 
-      # Upload before the threshold check, so the trend is visible in Codecov even when the gate fails.
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      # Before the threshold check, so the coverage job can show the trend in Codecov even when the gate fails.
+      - name: Upload coverage report
+        if: ${{ !inputs.release }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          files: ${{ steps.coverage.outputs.report }}
-          use_oidc: true
-          fail_ci_if_error: false
-          verbose: false
+          name: coverage-report
+          path: ${{ steps.coverage.outputs.report }}
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Check coverage thresholds
         env:
@@ -287,9 +326,100 @@ jobs:
           echo "Native executable: $(file "$EXE")"
           "$EXE"
 
+      - name: Release files
+        # The exact packages that passed every gate above, with a CycloneDX 1.6 SBOM and an OpenVEX document per
+        # package, and a SHA256SUMS file over all of them. The SBOM lists build-time packages with scope
+        # "excluded"; its serial number stays in, because actions/attest uses it to recognize CycloneDX. The VEX
+        # document starts with no statements and gains one when a dependency CVE is assessed. The hash of
+        # SHA256SUMS reaches the publish job as a job output, a channel separate from the artifact store.
+        if: inputs.release
+        id: release
+        env:
+          HAS_CORE: ${{ inputs.has-core }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          OUT="$RUNNER_TEMP/release"
+          IDS=("${PACKAGE}.TUnit")
+          if [ "$HAS_CORE" = true ]; then IDS=("$PACKAGE" "${PACKAGE}.TUnit"); fi
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for ID in "${IDS[@]}"; do
+            for EXT in nupkg snupkg; do
+              FILE="artifacts/${ID}.${VERSION}.${EXT}"
+              if [ ! -f "$FILE" ]; then
+                echo "::error::$FILE was not produced"
+                ls -la artifacts
+                exit 1
+              fi
+              cp "$FILE" "$OUT/"
+            done
+            dotnet CycloneDX "src/${ID}/${ID}.csproj" -o "$OUT" -F Json -spv 1.6 \
+              -fn "${ID}.${VERSION}.cdx.json" --exclude-test-projects
+            cat > "$OUT/${ID}.${VERSION}.vex.json" <<EOF
+          {
+            "@context": "https://openvex.dev/ns/v0.2.0",
+            "@id": "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${ID}.${VERSION}.vex.json",
+            "author": "John Verheij",
+            "timestamp": "${TIMESTAMP}",
+            "version": 1,
+            "tooling": "Generated at release time; statements are added as dependency CVEs are assessed",
+            "statements": []
+          }
+          EOF
+          done
+          cd "$OUT"
+          sha256sum -- *.nupkg *.snupkg *.cdx.json *.vex.json RELEASE_NOTES.md > SHA256SUMS
+          cat SHA256SUMS
+          echo "checksum=$(sha256sum SHA256SUMS | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
       - name: Upload package artifacts
+        if: ${{ !inputs.release }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nupkg
           path: ./artifacts/*.nupkg
           retention-days: 7
+
+      - name: Upload release artifact
+        if: inputs.release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-packages
+          path: ${{ runner.temp }}/release
+          retention-days: 14
+          if-no-files-found: error
+
+  coverage:
+    name: Upload coverage
+    needs: build
+    # Its own job, so the OIDC token never sits next to build and test code. It also runs when the build failed
+    # its coverage threshold, so the trend stays visible in Codecov.
+    if: ${{ !inputs.release && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read   # checkout, so Codecov can map the report to the repository files
+      id-token: write  # Codecov upload through OIDC, so no token secret is needed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download coverage report
+        id: download
+        continue-on-error: true   # absent when the build failed before the tests ran
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-report
+          path: ${{ runner.temp }}/coverage
+
+      - name: Upload coverage to Codecov
+        if: steps.download.outcome == 'success'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: ${{ runner.temp }}/coverage/coverage.cobertura.xml
+          use_oidc: true
+          fail_ci_if_error: false
+          verbose: false

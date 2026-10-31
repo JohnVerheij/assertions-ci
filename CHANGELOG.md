@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Release builds in `package-ci.yml`** (`release: true`). Every CI gate runs on the exact packages that ship, and
+  the job adds:
+  - a version gate (the tag must match the csproj versions);
+  - release notes from the CHANGELOG;
+  - a CycloneDX SBOM (build-time packages listed with scope `excluded`) and an OpenVEX document per package;
+  - a `SHA256SUMS` file.
+
+  All of it is uploaded as the `release-packages` artifact. A run without a tag is a dry-run.
+- **`package-publish`**, a composite action for the publish job of a package repository's `release.yml`. It runs
+  no project code:
+  - checks that the tag is signed, annotated, unmoved and on the default branch;
+  - checks every release file against the build job's checksums;
+  - attests provenance (`actions/attest`) and SBOMs;
+  - pushes to NuGet through Trusted Publishing;
+  - creates the GitHub release with `gh`.
+- **Release workflow** for this repository: a signed `vX.Y.Z` tag creates the GitHub release from the CHANGELOG.
+
+### Changed
+
+- The Codecov upload moved from the build job to its own `Upload coverage` job, the only job with an OIDC token,
+  so build and test code no longer runs next to a credential. The caller's `ci.yml` doesn't change.
+
 ## [1.0.0] - 2026-10-31: reusable package CI workflow
 
 First release. The SseAssertions repository ran it as a pilot before release, including the Native AOT gate on

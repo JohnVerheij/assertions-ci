@@ -1,0 +1,47 @@
+name: Release
+
+# Creates the GitHub release for a pushed vX.Y.Z tag, with the matching CHANGELOG section as its text.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # never cancel an in-progress release
+
+jobs:
+  release:
+    name: GitHub release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # create the GitHub release (job-level perms override workflow-level)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify tag
+        # A signed, annotated tag on a commit of the default branch.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verify_tag.py
+
+      - name: Extract release notes from CHANGELOG
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 scripts/release_notes.py "${TAG#v}" CHANGELOG.md "$RUNNER_TEMP/RELEASE_NOTES.md"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/RELEASE_NOTES.md"

@@ -1,0 +1,208 @@
+name: Package publish
+description: >-
+  Publishes the release-packages artifact of a package-ci.yml release build: verifies the tag and the checksums,
+  attests provenance and SBOMs, pushes to NuGet through Trusted Publishing, and creates the GitHub release. Runs
+  no project code.
+
+# Runs inside the caller's publish job, so the OIDC token, the NuGet Trusted Publishing policy (repository,
+# release.yml, environment) and the attestation signer identity are the caller's. See README.md.
+
+inputs:
+  package:
+    description: Package name without the .TUnit suffix, for example LogAssertions.
+    required: true
+  has-core:
+    description: "'true' when the repository ships the framework-agnostic core package."
+    required: false
+    default: 'true'
+  version:
+    description: The version output of the package-ci.yml release build.
+    required: true
+  checksum:
+    description: The checksum output of the package-ci.yml release build (SHA-256 of its SHA256SUMS file).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        HAS_CORE: ${{ inputs.has-core }}
+        VERSION: ${{ inputs.version }}
+        CHECKSUM: ${{ inputs.checksum }}
+      run: |
+        FAILED=0
+        if [[ ! "$PACKAGE" =~ ^[A-Z][A-Za-z0-9]*Assertions$ ]]; then
+          echo "::error::Input 'package' must be a package name such as LogAssertions, got '$PACKAGE'"
+          FAILED=1
+        fi
+        if [[ "$HAS_CORE" != true && "$HAS_CORE" != false ]]; then
+          echo "::error::Input 'has-core' must be 'true' or 'false', got '$HAS_CORE'"
+          FAILED=1
+        fi
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::Input 'version' must be a semantic version, got '$VERSION'"
+          FAILED=1
+        fi
+        if [[ ! "$CHECKSUM" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "::error::Input 'checksum' must be a SHA-256 hex digest, got '$CHECKSUM'"
+          FAILED=1
+        fi
+        exit "$FAILED"
+
+    - name: Verify tag
+      # A signed, annotated tag v<version> that still points to the commit this run built, on the default branch.
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        EXPECTED_VERSION: ${{ inputs.version }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../scripts/verify_tag.py"
+
+    - name: Download release files
+      # Fails on a digest mismatch with the artifact store.
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: release-packages
+        path: ${{ runner.temp }}/package-release
+
+    - name: Verify release files
+      # The SHA256SUMS hash came from the build job's output, not from the artifact, and the file set must be
+      # exactly what the build produced.
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        HAS_CORE: ${{ inputs.has-core }}
+        VERSION: ${{ inputs.version }}
+        CHECKSUM: ${{ inputs.checksum }}
+      run: |
+        cd "$RUNNER_TEMP/package-release"
+        ACTUAL=$(sha256sum SHA256SUMS | cut -d ' ' -f 1)
+        if [ "$ACTUAL" != "$CHECKSUM" ]; then
+          echo "::error::SHA256SUMS hash $ACTUAL differs from the build job's $CHECKSUM"
+          exit 1
+        fi
+        if ! sha256sum --check --strict SHA256SUMS; then
+          echo "::error::A release file does not match SHA256SUMS"
+          exit 1
+        fi
+        IDS=("${PACKAGE}.TUnit")
+        if [ "$HAS_CORE" = true ]; then IDS=("$PACKAGE" "${PACKAGE}.TUnit"); fi
+        EXPECTED=(RELEASE_NOTES.md)
+        for ID in "${IDS[@]}"; do
+          EXPECTED+=("${ID}.${VERSION}.nupkg" "${ID}.${VERSION}.snupkg" "${ID}.${VERSION}.cdx.json" "${ID}.${VERSION}.vex.json")
+        done
+        # sha256sum separates hash and name with "  " (text mode) or " *" (binary mode).
+        LISTED=$(sed -E 's/^[0-9a-f]{64} [ *]//' SHA256SUMS | sort)
+        WANTED=$(printf '%s\n' "${EXPECTED[@]}" | sort)
+        PRESENT=$(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+        if [ "$LISTED" != "$WANTED" ] || [ "$PRESENT" != "$WANTED" ]; then
+          echo "::error::Release files differ from the expected set"
+          echo "Expected (<) against SHA256SUMS (>):"
+          diff <(echo "$WANTED") <(echo "$LISTED") || true
+          echo "Expected (<) against the downloaded files (>):"
+          diff <(echo "$WANTED") <(echo "$PRESENT") || true
+          exit 1
+        fi
+        echo "Verified ${#EXPECTED[@]} release files for version $VERSION"
+
+    - name: Attest build provenance
+      # SLSA provenance for every package, signed through Sigstore (keyless). Consumers verify with
+      #   gh attestation verify <file>.nupkg --repo <owner>/<repository>
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: |
+          ${{ runner.temp }}/package-release/*.nupkg
+          ${{ runner.temp }}/package-release/*.snupkg
+
+    - name: Attest CycloneDX SBOM (core)
+      # Exact file names: sbom-path takes one file, and a <Package>.*.nupkg glob would also match the adapter.
+      if: inputs.has-core == 'true'
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.${{ inputs.version }}.nupkg
+        sbom-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.${{ inputs.version }}.cdx.json
+
+    - name: Attest CycloneDX SBOM (adapter)
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ inputs.version }}.nupkg
+        sbom-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ inputs.version }}.cdx.json
+
+    - name: Checkout global.json
+      # Only global.json, so the push uses the SDK the build used. No project file is checked out.
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        sparse-checkout: /global.json
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+
+    - name: NuGet login (Trusted Publishing)
+      # Exchanges the job's OIDC token for a short-lived NuGet API key; the trust policy on nuget.org names the
+      # caller's repository, release.yml and environment. No long-lived secret.
+      id: nuget-login
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+      with:
+        user: JohnVerheij
+
+    - name: Push to NuGet
+      # dotnet nuget push also pushes the matching .snupkg next to each .nupkg. --skip-duplicate makes a re-run
+      # after a later failure safe.
+      shell: bash
+      env:
+        NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+      run: |
+        dotnet nuget push "$RUNNER_TEMP"/package-release/*.nupkg \
+          --api-key "$NUGET_API_KEY" \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
+
+    - name: Create GitHub release
+      # With assets, gh creates a draft, uploads them and then publishes, so the release is complete before it
+      # becomes immutable. A draft left by a failed earlier attempt is replaced; a published release is kept.
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        TAG: ${{ github.ref_name }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        OUT="$RUNNER_TEMP/package-release"
+        STATE=$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo none)
+        if [ "$STATE" = false ]; then
+          echo "::notice::GitHub release $TAG is already published"
+          exit 0
+        fi
+        if [ "$STATE" = true ]; then
+          echo "Replacing the draft release left by an earlier attempt"
+          gh release delete "$TAG" --yes
+        fi
+        FLAGS=()
+        if [[ "$VERSION" == *-* ]]; then FLAGS+=(--prerelease); fi
+        gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$OUT/RELEASE_NOTES.md" "${FLAGS[@]}" \
+          "$OUT"/*.nupkg "$OUT"/*.snupkg "$OUT"/*.cdx.json "$OUT"/*.vex.json "$OUT/SHA256SUMS"
+
+    - name: Summary
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        HAS_CORE: ${{ inputs.has-core }}
+        VERSION: ${{ inputs.version }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        IDS=("${PACKAGE}.TUnit")
+        if [ "$HAS_CORE" = true ]; then IDS=("$PACKAGE" "${PACKAGE}.TUnit"); fi
+        {
+          echo "### Released ${PACKAGE} ${VERSION}"
+          echo
+          for ID in "${IDS[@]}"; do
+            echo "- [${ID} ${VERSION} on nuget.org](https://www.nuget.org/packages/${ID}/${VERSION})"
+          done
+          echo "- [GitHub release ${TAG}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})"
+        } >> "$GITHUB_STEP_SUMMARY"
