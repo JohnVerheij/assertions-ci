@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`dependency-graph.yml`**, a reusable workflow that submits the resolved NuGet dependencies to GitHub's
+  dependency graph. A read-only job restores in locked mode and builds the snapshot from `project.assets.json`;
+  a separate job with `contents: write`, which runs no project code, submits it. The snapshot lists every package
+  with its exact version, direct or indirect, and runtime or development scope. Dependabot alerts then match the
+  real versions.
+- **Provenance bundle on GitHub releases.** `package-publish` attaches the Sigstore bundle of the provenance
+  attestation as `<Package>.<version>.intoto.jsonl`, so a package can also be verified offline
+  (`gh attestation verify --bundle`).
+
+### Changed
+
+- `package-ci.yml` restores with `--locked-mode`. The repositories already enable locked mode on GitHub Actions;
+  the flag makes it explicit where the restore runs.
+
 ## [1.1.0] - 2026-10-31: release builds and the publish action
 
 Minor release: the release path for the package repositories. Callers of `package-ci.yml` need no change; a

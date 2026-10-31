@@ -110,6 +110,7 @@ runs:
     - name: Attest build provenance
       # SLSA provenance for every package, signed through Sigstore (keyless). Consumers verify with
       #   gh attestation verify <file>.nupkg --repo <owner>/<repository>
+      id: provenance
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
         subject-path: |
@@ -129,6 +130,20 @@ runs:
       with:
         subject-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ inputs.version }}.nupkg
         sbom-path: ${{ runner.temp }}/package-release/${{ inputs.package }}.TUnit.${{ inputs.version }}.cdx.json
+
+    - name: Provenance bundle
+      # The Sigstore bundle of the provenance attestation, attached to the GitHub release as
+      # <Package>.<version>.intoto.jsonl (one bundle per line), so it can also be verified offline:
+      #   gh attestation verify <file>.nupkg --bundle <Package>.<version>.intoto.jsonl --repo <owner>/<repository>
+      shell: bash
+      env:
+        BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        PACKAGE: ${{ inputs.package }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        TARGET="$RUNNER_TEMP/package-release/${PACKAGE}.${VERSION}.intoto.jsonl"
+        jq -c . "$BUNDLE" > "$TARGET"
+        echo "Provenance bundle: $(basename "$TARGET") ($(wc -l < "$TARGET") bundle(s))"
 
     - name: Checkout global.json
       # Only global.json, so the push uses the SDK the build used. No project file is checked out.
@@ -186,7 +201,7 @@ runs:
         FLAGS=()
         if [[ "$VERSION" == *-* ]]; then FLAGS+=(--prerelease); fi
         gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$OUT/RELEASE_NOTES.md" "${FLAGS[@]}" \
-          "$OUT"/*.nupkg "$OUT"/*.snupkg "$OUT"/*.cdx.json "$OUT"/*.vex.json "$OUT/SHA256SUMS"
+          "$OUT"/*.nupkg "$OUT"/*.snupkg "$OUT"/*.cdx.json "$OUT"/*.vex.json "$OUT"/*.intoto.jsonl "$OUT/SHA256SUMS"
 
     - name: Summary
       shell: bash

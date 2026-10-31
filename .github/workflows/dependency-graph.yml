@@ -1,0 +1,87 @@
+name: Dependency graph
+
+# Reusable: submits the resolved NuGet dependencies of a package repository to GitHub's dependency graph: every
+# project under src/ and tests/, exact versions, transitive packages included. Dependabot alerts and dependency
+# review then see the real versions. Without it, the graph holds only the static parse of the csproj files, which
+# with central package management has no versions and no transitive packages.
+# See README.md for the caller contract.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read   # checkout only: the restore never runs next to a credential
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared scripts
+        # job.workflow_sha is the commit of this reusable workflow, so the scripts always match the
+        # workflow version the caller pinned.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JohnVerheij/assertions-ci
+          ref: ${{ job.workflow_sha }}
+          path: .assertions-ci
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore --locked-mode
+
+      - name: Build the snapshot
+        env:
+          DETECTOR_VERSION: ${{ job.workflow_sha }}
+        run: python3 .assertions-ci/scripts/dependency_snapshot.py "$RUNNER_TEMP/dependency-snapshot.json"
+
+      - name: Upload the snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-snapshot
+          path: ${{ runner.temp }}/dependency-snapshot.json
+          retention-days: 7
+          if-no-files-found: error
+
+  submit:
+    name: Submit to the dependency graph
+    needs: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # dependency submission API; this job runs no project code
+
+    steps:
+      - name: Download the snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dependency-snapshot
+          path: ${{ runner.temp }}/snapshot
+
+      - name: Submit the snapshot
+        # Replaces the previous snapshot of this detector and correlator.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --method POST "repos/$GH_REPO/dependency-graph/snapshots" \
+            --input "$RUNNER_TEMP/snapshot/dependency-snapshot.json" \
+            --jq '"Snapshot \(.id) created at \(.created_at): \(.result) \(.message // "")"'

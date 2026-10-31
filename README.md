@@ -13,7 +13,9 @@ build stage of a release, and a composite action for the publish stage.
 | --- | --- |
 | `.github/workflows/package-ci.yml` | Reusable CI for one package repository: build, tests with coverage, license gate, pack, package-content check, smoke test against the packed package, Native AOT gate. With `release: true`, the build stage of a release |
 | `.github/actions/package-publish/` | Composite action for the publish job of a package repository's `release.yml`: tag and checksum checks, attestations, NuGet push, GitHub release |
+| `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
+| `scripts/dependency_snapshot.py` | Builds the dependency snapshot from the restore output, with unit tests |
 | `scripts/release_version.py`, `scripts/release_notes.py`, `scripts/verify_tag.py` | Version gate, CHANGELOG extraction and tag check for releases, with unit tests |
 | `.github/workflows/actionlint.yml` | Lints every workflow (syntax, expressions, shellcheck) |
 | `.github/workflows/zizmor.yml` | Security audit of the workflows (blocks on findings) |
@@ -78,6 +80,7 @@ The workflow finds everything by convention:
 | `tests/<Package>.TUnit.SnapshotTests/` | Public API snapshot tests |
 | `tests/<Package>.TUnit.SmokeTest/` | External consumer of the packed adapter; assembly name `Smoke.Consumer` |
 | `.config/codecoverage.settings.xml` | Coverage scope |
+| `packages.lock.json` | Lock file per project; the restore runs with `--locked-mode` (the smoke test project has none, because it consumes the package packed in the same run) |
 | `.config/dotnet-tools.json` | Must include `dotnet-reportgenerator-globaltool` when `has-core` (two coverage reports are merged) |
 
 The smoke test project references the adapter as
@@ -87,6 +90,30 @@ The smoke test project references the adapter as
 The build job can only read the repository. The coverage report goes to Codecov from a separate job, the only
 one with an OIDC token, so build and test code never runs next to a credential. Codecov uses OIDC, so the
 repository needs no `CODECOV_TOKEN` secret.
+
+## Using `dependency-graph.yml`
+
+GitHub's dependency graph doesn't resolve centrally managed NuGet versions: the static parse of the csproj files
+lists packages without versions and without transitive packages. So Dependabot can't match advisories to the real
+versions. `dependency-graph.yml` submits the resolved graph instead:
+- **detect** (read-only): a `--locked-mode` restore, then `scripts/dependency_snapshot.py` reads every
+  `project.assets.json` under `src/` and `tests/`. It writes one manifest per project: every package with its exact
+  version, direct or indirect. Packages that reach consumers of a `src/` project are `runtime`; analyzers,
+  build-time packages and everything in test projects are `development`.
+- **submit** (`contents: write`): posts the snapshot to the dependency submission API. It runs no project code.
+  Each submission replaces the previous one.
+
+Add a job to the repository's `ci.yml`. It runs on pushes to `main` only:
+
+```yaml
+  dependency-graph:
+    # Submits the resolved NuGet dependencies (exact versions, transitive included) to the dependency graph,
+    # so Dependabot alerts see the real versions.
+    if: github.event_name == 'push'
+    uses: JohnVerheij/assertions-ci/.github/workflows/dependency-graph.yml@<commit-sha> # vX.Y.Z
+    permissions:
+      contents: write   # dependency submission API; the detect job itself only reads
+```
 
 ## Releasing: `package-ci.yml` + `package-publish`
 
@@ -183,9 +210,17 @@ A repository without a core package passes `has-core: false` to both.
 3. Attests build provenance for every `.nupkg` and `.snupkg`, and the CycloneDX SBOM of each `.nupkg`.
 4. Pushes to nuget.org with `NuGet/login` (Trusted Publishing; no API key secret) and `--skip-duplicate`, so a
    re-run is safe.
-5. Creates the GitHub release with the packages, SBOMs, VEX documents and `SHA256SUMS` attached. `gh` creates a
-   draft, uploads the assets and then publishes, so immutable releases work. A version with a `-` suffix becomes a
-   prerelease.
+5. Creates the GitHub release with the packages, SBOMs, VEX documents, `SHA256SUMS` and the provenance bundle
+   attached. `gh` creates a draft, uploads the assets and then publishes, so immutable releases work. A version
+   with a `-` suffix becomes a prerelease.
+
+The provenance bundle `<Package>.<version>.intoto.jsonl` is the Sigstore bundle of the provenance attestation.
+With it, a package can be verified offline as well:
+
+```shell
+gh attestation verify LogAssertions.TUnit.0.13.0.nupkg --bundle LogAssertions.0.13.0.intoto.jsonl \
+  --repo JohnVerheij/LogAssertions.TUnit
+```
 
 | Input | Default | Meaning |
 | --- | --- | --- |
