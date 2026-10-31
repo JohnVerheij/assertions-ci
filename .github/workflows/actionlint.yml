@@ -24,10 +24,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Register problem matcher
+        # Turns each actionlint finding (file:line:col: message [rule]) into an annotation on the pull
+        # request, so findings are visible without opening the job log.
+        run: echo "::add-matcher::.github/actionlint-matcher.json"
+
       - name: Run actionlint
         # Checks workflow syntax, expressions, contexts and job/step references, and runs shellcheck on
         # every run: script. Complements zizmor, which audits for security weaknesses. The image is pinned
         # by digest; Renovate updates it.
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: -color
