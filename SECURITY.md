@@ -28,7 +28,7 @@ the body, and the conversation moves to a private channel.
 Personal open-source project maintained outside working hours; best-effort targets:
 
 | Stage | Target |
-|---|---|
+| --- | --- |
 | Acknowledgement | Within 5 business days |
 | Initial assessment | Within 14 calendar days |
 | Fix released or disclosure plan agreed | Within 90 calendar days from assessment |

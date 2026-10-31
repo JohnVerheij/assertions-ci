@@ -1,0 +1,36 @@
+name: actionlint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Register problem matcher
+        # Turns each actionlint finding (file:line:col: message [rule]) into an annotation on the pull
+        # request, so findings are visible without opening the job log.
+        run: echo "::add-matcher::.github/actionlint-matcher.json"
+
+      - name: Run actionlint
+        # Checks workflow syntax, expressions, contexts and job/step references, and runs shellcheck on
+        # every run: script. Complements zizmor, which audits for security weaknesses. The image is pinned
+        # by digest; Renovate updates it.
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667

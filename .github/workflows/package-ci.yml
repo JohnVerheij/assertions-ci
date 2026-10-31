@@ -1,0 +1,295 @@
+name: Package CI
+
+# Reusable CI for one package repository of the family. Convention-driven: every repository has
+#   src/<Package>/                      framework-agnostic core (absent when has-core is false)
+#   src/<Package>.TUnit/                TUnit adapter
+#   tests/<Package>.Tests/              core tests (absent when has-core is false)
+#   tests/<Package>.TUnit.Tests/        adapter tests
+#   tests/<Package>.TUnit.SnapshotTests public API snapshot tests
+#   tests/<Package>.TUnit.SmokeTest/    external consumer of the packed adapter, assembly Smoke.Consumer
+#   .config/codecoverage.settings.xml   coverage scope
+# See README.md for the caller contract.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Package name without the .TUnit suffix, for example LogAssertions.
+        required: true
+        type: string
+      has-core:
+        description: Whether the repository ships the framework-agnostic core package and its test project.
+        required: false
+        type: boolean
+        default: true
+      line-threshold:
+        description: Minimum merged line coverage, as a fraction.
+        required: false
+        type: string
+        default: '0.90'
+      branch-threshold:
+        description: Minimum merged branch coverage, as a fraction.
+        required: false
+        type: string
+        default: '0.90'
+      expected-package-files:
+        description: Newline-separated paths that must be present in the adapter .nupkg, for example build/SnapshotAssertions.TUnit.targets.
+        required: false
+        type: string
+        default: ''
+      license-allowlist:
+        description: Newline-separated PackageId=license entries the license gate accepts besides MIT.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test & pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read   # checkout (job-level perms override workflow-level)
+      id-token: write  # Codecov upload through OIDC, so no token secret is needed
+    env:
+      PACKAGE: ${{ inputs.package }}
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ ! "$PACKAGE" =~ ^[A-Z][A-Za-z0-9]*Assertions$ ]]; then
+            echo "::error::Input 'package' must be a package name such as LogAssertions, got '$PACKAGE'"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout shared scripts
+        # job.workflow_sha is the commit of this reusable workflow, so the scripts always match the
+        # workflow version the caller pinned.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JohnVerheij/assertions-ci
+          ref: ${{ job.workflow_sha }}
+          path: .assertions-ci
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: |
+          dotnet restore
+          dotnet tool restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: License gate
+        # Every package that ships to consumers (not PrivateAssets=all, plus the transitive closure) must
+        # be MIT, or be listed in the license-allowlist input. Reads the restore output of src/*.
+        env:
+          LICENSE_ALLOWLIST: ${{ inputs.license-allowlist }}
+        run: python3 .assertions-ci/scripts/license_gate.py
+
+      - name: Test core suite (with coverage)
+        # The core test project references only the core package, so a TUnit type leaking into the
+        # core's public surface fails to compile here. The = form of --coverage-output-format avoids a
+        # documented MTP space-form mis-parse.
+        if: inputs.has-core
+        run: |
+          dotnet run --project "tests/${PACKAGE}.Tests/${PACKAGE}.Tests.csproj" \
+            --configuration Release --no-build \
+            -- \
+            --coverage \
+            --coverage-settings .config/codecoverage.settings.xml \
+            --coverage-output coverage.cobertura.xml \
+            --coverage-output-format=cobertura
+
+      - name: Test adapter suite (with coverage)
+        run: |
+          dotnet run --project "tests/${PACKAGE}.TUnit.Tests/${PACKAGE}.TUnit.Tests.csproj" \
+            --configuration Release --no-build \
+            -- \
+            --coverage \
+            --coverage-settings .config/codecoverage.settings.xml \
+            --coverage-output coverage.cobertura.xml \
+            --coverage-output-format=cobertura
+
+      - name: Test snapshot suite (no coverage)
+        # Pins the public API surface; it measures surface, not behavior, so it adds nothing to coverage.
+        run: |
+          dotnet run --project "tests/${PACKAGE}.TUnit.SnapshotTests/${PACKAGE}.TUnit.SnapshotTests.csproj" \
+            --configuration Release --no-build
+
+      - name: Merge coverage reports
+        id: coverage
+        run: |
+          mapfile -t REPORTS < <(find tests -name 'coverage.cobertura.xml' | sort)
+          if [ "${#REPORTS[@]}" -eq 0 ]; then
+            echo "::error::No cobertura coverage report found"
+            exit 1
+          fi
+          if [ "${#REPORTS[@]}" -eq 1 ]; then
+            MERGED="${REPORTS[0]}"
+          else
+            JOINED=$(IFS=';'; echo "${REPORTS[*]}")
+            dotnet reportgenerator "-reports:$JOINED" -targetdir:./coverage-merged "-reporttypes:Cobertura"
+            MERGED=./coverage-merged/Cobertura.xml
+          fi
+          if [ ! -f "$MERGED" ]; then
+            echo "::error::Merged coverage report $MERGED was not produced"
+            exit 1
+          fi
+          echo "report=$MERGED" >> "$GITHUB_OUTPUT"
+          echo "Coverage report: $MERGED (from ${#REPORTS[@]} source report(s))"
+
+      # Upload before the threshold check, so the trend is visible in Codecov even when the gate fails.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: ${{ steps.coverage.outputs.report }}
+          use_oidc: true
+          fail_ci_if_error: false
+          verbose: false
+
+      - name: Check coverage thresholds
+        env:
+          LINE_THRESHOLD: ${{ inputs.line-threshold }}
+          BRANCH_THRESHOLD: ${{ inputs.branch-threshold }}
+          REPORT: ${{ steps.coverage.outputs.report }}
+        run: |
+          LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$REPORT" | head -1)
+          BRANCH_RATE=$(grep -oP 'branch-rate="\K[^"]+' "$REPORT" | head -1)
+          if [ -z "$LINE_RATE" ] || [ -z "$BRANCH_RATE" ]; then
+            echo "::error::Could not read line-rate or branch-rate from $REPORT"
+            exit 1
+          fi
+          awk -v l="$LINE_RATE" -v b="$BRANCH_RATE" -v lt="$LINE_THRESHOLD" -v bt="$BRANCH_THRESHOLD" 'BEGIN {
+            printf "Line coverage:   %.2f%% (threshold %.2f%%)\n", l * 100, lt * 100
+            printf "Branch coverage: %.2f%% (threshold %.2f%%)\n", b * 100, bt * 100
+            failed = 0
+            if (l < lt) { printf "::error::Line coverage %.2f%% is below %.2f%%\n", l * 100, lt * 100; failed = 1 }
+            if (b < bt) { printf "::error::Branch coverage %.2f%% is below %.2f%%\n", b * 100, bt * 100; failed = 1 }
+            exit failed
+          }'
+
+      - name: Pack core
+        if: inputs.has-core
+        run: dotnet pack "src/${PACKAGE}/${PACKAGE}.csproj" --configuration Release --no-build --output ./artifacts
+
+      - name: Pack adapter
+        run: dotnet pack "src/${PACKAGE}.TUnit/${PACKAGE}.TUnit.csproj" --configuration Release --no-build --output ./artifacts
+
+      - name: Locate adapter package
+        id: adapter
+        run: |
+          shopt -s nullglob
+          NUPKGS=(./artifacts/"${PACKAGE}".TUnit.[0-9]*.nupkg)
+          if [ "${#NUPKGS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ${PACKAGE}.TUnit .nupkg in ./artifacts, found ${#NUPKGS[@]}"
+            ls -la ./artifacts
+            exit 1
+          fi
+          FILE=$(basename "${NUPKGS[0]}")
+          VERSION=${FILE#"${PACKAGE}.TUnit."}
+          VERSION=${VERSION%.nupkg}
+          echo "nupkg=${NUPKGS[0]}" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Adapter package: ${NUPKGS[0]} (version $VERSION)"
+
+      - name: Verify package contents
+        # Assets that unit tests cannot see (for example build/*.targets) but consumers depend on.
+        if: inputs.expected-package-files != ''
+        env:
+          EXPECTED: ${{ inputs.expected-package-files }}
+          NUPKG: ${{ steps.adapter.outputs.nupkg }}
+        run: |
+          CONTENTS=$(unzip -Z1 "$NUPKG")
+          MISSING=0
+          while IFS= read -r ENTRY; do
+            ENTRY=$(echo "$ENTRY" | xargs)
+            [ -z "$ENTRY" ] && continue
+            if grep -qxF "$ENTRY" <<< "$CONTENTS"; then
+              echo "OK: $ENTRY"
+            else
+              echo "::error::$ENTRY is missing from $NUPKG"
+              MISSING=1
+            fi
+          done <<< "$EXPECTED"
+          [ "$MISSING" -eq 0 ] || { echo "$CONTENTS"; exit 1; }
+
+      - name: External-consumer smoke test
+        # The smoke project consumes the adapter only through PackageReference, from the just-packed local
+        # feed (its NuGet.config maps <Package>.* to ../../artifacts). SmokePackageVersion pins the exact
+        # packed version; absolute --source paths avoid NuGet's fragile relative-path handling on Linux.
+        env:
+          SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
+        run: |
+          SMOKE="tests/${PACKAGE}.TUnit.SmokeTest/${PACKAGE}.TUnit.SmokeTest.csproj"
+          dotnet restore "$SMOKE" \
+            --force-evaluate \
+            -p:SmokePackageVersion="$SMOKE_VERSION" \
+            --source "$GITHUB_WORKSPACE/artifacts" \
+            --source "https://api.nuget.org/v3/index.json"
+          dotnet build "$SMOKE" --configuration Release --no-restore -p:SmokePackageVersion="$SMOKE_VERSION"
+          dotnet run --project "$SMOKE" --configuration Release --no-build -p:SmokePackageVersion="$SMOKE_VERSION"
+
+      - name: Native AOT gate
+        # Publishes the smoke consumer with Native AOT and runs the native executable, which executes the
+        # smoke tests compiled ahead of time. PublishAot is passed to the restore as well, so the ILCompiler
+        # packages are in the restore graph; without that, publish silently produces a managed build.
+        env:
+          SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
+        run: |
+          SMOKE="tests/${PACKAGE}.TUnit.SmokeTest/${PACKAGE}.TUnit.SmokeTest.csproj"
+          OUT="$RUNNER_TEMP/aot"
+          dotnet restore "$SMOKE" \
+            --runtime linux-x64 \
+            --force-evaluate \
+            -p:PublishAot=true \
+            -p:SmokePackageVersion="$SMOKE_VERSION" \
+            --source "$GITHUB_WORKSPACE/artifacts" \
+            --source "https://api.nuget.org/v3/index.json"
+          dotnet publish "$SMOKE" \
+            --configuration Release \
+            --runtime linux-x64 \
+            --no-restore \
+            -p:PublishAot=true \
+            -p:SmokePackageVersion="$SMOKE_VERSION" \
+            --output "$OUT"
+          EXE="$OUT/Smoke.Consumer"
+          if [ ! -x "$EXE" ]; then
+            echo "::error::Native executable $EXE was not produced"
+            ls -la "$OUT"
+            exit 1
+          fi
+          if ! file "$EXE" | grep -q 'ELF 64-bit'; then
+            echo "::error::$EXE is not a native ELF executable: $(file "$EXE")"
+            exit 1
+          fi
+          if [ -e "$OUT/Smoke.Consumer.dll" ]; then
+            echo "::error::Smoke.Consumer.dll is present, so the publish was managed, not Native AOT"
+            exit 1
+          fi
+          echo "Native executable: $(file "$EXE")"
+          "$EXE"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nupkg
+          path: ./artifacts/*.nupkg
+          retention-days: 7

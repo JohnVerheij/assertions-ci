@@ -1,18 +1,12 @@
 name: zizmor
 
+# No path filters: this repository is almost entirely workflow code, and a check that always runs can be
+# a required status check without blocking pull requests that touch other files.
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
-      - '.github/zizmor.yml'
   pull_request:
     branches: [main]
-    paths:
-      - '.github/workflows/**'
-      - '.github/actions/**'
-      - '.github/zizmor.yml'
 
 permissions:
   contents: read
