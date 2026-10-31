@@ -125,8 +125,10 @@ jobs:
           global-json-file: global.json
 
       - name: Restore
+        # Locked mode: every package must match packages.lock.json. The repositories already set
+        # RestoreLockedMode on GitHub Actions; the flag makes it explicit where it runs.
         run: |
-          dotnet restore
+          dotnet restore --locked-mode
           dotnet tool restore
 
       - name: Build
@@ -274,6 +276,7 @@ jobs:
         # The smoke project consumes the adapter only through PackageReference, from the just-packed local
         # feed (its NuGet.config maps <Package>.* to ../../artifacts). SmokePackageVersion pins the exact
         # packed version; absolute --source paths avoid NuGet's fragile relative-path handling on Linux.
+        # No locked mode here: the package was packed in this run, so its hash can't be in a lock file.
         env:
           SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
         run: |
