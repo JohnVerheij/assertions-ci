@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **API compatibility suppression check** in `package-ci.yml`. Pack regenerates `CompatibilitySuppressions.xml`
+  instead of failing on an API difference, so ApiCompat never blocked on its own. The build now fails when pack
+  changes a committed suppression file or adds one; the fix is to run `dotnet pack` locally and commit the
+  regenerated file, which puts the API change into the pull request.
+
+### Changed
+
+- `package-ci.yml` merges the coverage reports in `$RUNNER_TEMP` instead of `./coverage-merged`, so a local run of
+  the same steps leaves no untracked folder in the repository.
+
 ## [1.2.1] - 2026-11-01: release notes attached to the GitHub release
 
 Patch release. Callers need no change.

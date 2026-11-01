@@ -11,7 +11,7 @@ build stage of a release, and a composite action for the publish stage.
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/package-ci.yml` | Reusable CI for one package repository: build, tests with coverage, license gate, pack, package-content check, smoke test against the packed package, Native AOT gate. With `release: true`, the build stage of a release |
+| `.github/workflows/package-ci.yml` | Reusable CI for one package repository: build, tests with coverage, license gate, pack, API compatibility suppression check, package-content check, smoke test against the packed package, Native AOT gate. With `release: true`, the build stage of a release |
 | `.github/actions/package-publish/` | Composite action for the publish job of a package repository's `release.yml`: tag and checksum checks, attestations, NuGet push, GitHub release |
 | `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
@@ -82,6 +82,12 @@ The workflow finds everything by convention:
 | `.config/codecoverage.settings.xml` | Coverage scope |
 | `packages.lock.json` | Lock file per project; the restore runs with `--locked-mode` (the smoke test project has none, because it consumes the package packed in the same run) |
 | `.config/dotnet-tools.json` | Must include `dotnet-reportgenerator-globaltool` when `has-core` (two coverage reports are merged) |
+| `src/*/CompatibilitySuppressions.xml` | ApiCompat suppressions, committed; pack regenerates them, and a changed or new file fails the build |
+
+Pack runs package validation against the previous release (`PackageValidationBaselineVersion`) and, with
+`ApiCompatGenerateSuppressionFile`, rewrites `CompatibilitySuppressions.xml` instead of failing. The build fails
+when that changes a committed file or adds one, so every public API difference from the baseline shows up in the
+pull request: run `dotnet pack` locally and commit the regenerated file. Line endings don't count.
 
 The smoke test project references the adapter as
 `<PackageReference Include="<Package>.TUnit" Version="$(SmokePackageVersion)" />` with a `*-*` default for
