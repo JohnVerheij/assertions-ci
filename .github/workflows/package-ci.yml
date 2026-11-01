@@ -183,8 +183,8 @@ jobs:
             MERGED="${REPORTS[0]}"
           else
             JOINED=$(IFS=';'; echo "${REPORTS[*]}")
-            dotnet reportgenerator "-reports:$JOINED" -targetdir:./coverage-merged "-reporttypes:Cobertura"
-            MERGED=./coverage-merged/Cobertura.xml
+            dotnet reportgenerator "-reports:$JOINED" "-targetdir:$RUNNER_TEMP/coverage-merged" "-reporttypes:Cobertura"
+            MERGED="$RUNNER_TEMP/coverage-merged/Cobertura.xml"
           fi
           if [ ! -f "$MERGED" ]; then
             echo "::error::Merged coverage report $MERGED was not produced"
@@ -233,6 +233,25 @@ jobs:
 
       - name: Pack adapter
         run: dotnet pack "src/${PACKAGE}.TUnit/${PACKAGE}.TUnit.csproj" --configuration Release --no-build --output ./artifacts
+
+      # Pack regenerates each CompatibilitySuppressions.xml (ApiCompatGenerateSuppressionFile), so ApiCompat on its
+      # own never fails. A changed or new file means the public API differs from the baseline in a way the committed
+      # file does not record. Fail, so the regenerated file is committed and the API change is reviewed in the pull
+      # request. Line endings are ignored: pack writes the platform's.
+      - name: API compatibility suppressions unchanged
+        run: |
+          NEW_FILES=$(git ls-files --others --exclude-standard -- '*CompatibilitySuppressions.xml')
+          if git diff --quiet --ignore-cr-at-eol -- '*CompatibilitySuppressions.xml' && [ -z "$NEW_FILES" ]; then
+            echo "The committed API compatibility suppressions match the packed packages."
+            exit 0
+          fi
+          echo "::error::Pack changed the API compatibility suppressions: the public API differs from the ApiCompat baseline in a way the committed CompatibilitySuppressions.xml does not record. Run dotnet pack locally and commit the regenerated file."
+          git --no-pager diff --ignore-cr-at-eol -- '*CompatibilitySuppressions.xml'
+          if [ -n "$NEW_FILES" ]; then
+            echo "New suppression files:"
+            echo "$NEW_FILES"
+          fi
+          exit 1
 
       - name: Locate adapter package
         id: adapter
