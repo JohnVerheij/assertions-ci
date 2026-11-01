@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `package-ci.yml` merges the coverage reports in `$RUNNER_TEMP` instead of `./coverage-merged`, so a local run of
   the same steps leaves no untracked folder in the repository.
 
+## [1.2.1] - 2026-11-01: release notes attached to the GitHub release
+
+Patch release. Callers need no change.
+
+### Fixed
+
+- `package-publish` attaches `RELEASE_NOTES.md` to the GitHub release. `SHA256SUMS` lists it, so without it
+  `sha256sum --check SHA256SUMS` on the downloaded assets failed on a missing file (first seen on
+  SnapshotAssertions v0.8.0; `--ignore-missing` checks those assets).
+
 ## [1.2.0] - 2026-10-31: dependency graph and provenance bundles
 
 Minor release. Callers of `package-ci.yml` and `package-publish` need no change; `dependency-graph.yml` is opt-in
@@ -89,7 +99,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JohnVerheij/assertions-ci/releases/tag/v1.0.0

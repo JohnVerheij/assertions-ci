@@ -216,8 +216,9 @@ A repository without a core package passes `has-core: false` to both.
 3. Attests build provenance for every `.nupkg` and `.snupkg`, and the CycloneDX SBOM of each `.nupkg`.
 4. Pushes to nuget.org with `NuGet/login` (Trusted Publishing; no API key secret) and `--skip-duplicate`, so a
    re-run is safe.
-5. Creates the GitHub release with the packages, SBOMs, VEX documents, `SHA256SUMS` and the provenance bundle
-   attached. `gh` creates a draft, uploads the assets and then publishes, so immutable releases work. A version
+5. Creates the GitHub release with the packages, SBOMs, VEX documents, `RELEASE_NOTES.md`, `SHA256SUMS` and the
+   provenance bundle attached. Every file `SHA256SUMS` lists is attached, so `sha256sum --check SHA256SUMS` works on
+   the downloaded assets. `gh` creates a draft, uploads the assets and then publishes, so immutable releases work. A version
    with a `-` suffix becomes a prerelease.
 
 The provenance bundle `<Package>.<version>.intoto.jsonl` is the Sigstore bundle of the provenance attestation.
