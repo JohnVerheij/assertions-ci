@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-02: API compatibility suppression check
+
+Minor release. A repository whose packed API differs from its ApiCompat baseline in a way its committed
+`CompatibilitySuppressions.xml` does not record now fails CI: run `dotnet pack` locally and commit the regenerated
+file.
+
 ### Added
 
-- **API compatibility suppression check** in `package-ci.yml`. Pack regenerates `CompatibilitySuppressions.xml`
-  instead of failing on an API difference, so ApiCompat never blocked on its own. The build now fails when pack
-  changes a committed suppression file or adds one; the fix is to run `dotnet pack` locally and commit the
+- **API compatibility suppression check** in `package-ci.yml`. Pack regenerated `CompatibilitySuppressions.xml`
+  instead of failing on an API difference, so ApiCompat never blocked on its own. Both packs now pass
+  `ApiCompatGenerateSuppressionFile=true`, and the build fails when pack changes a committed suppression file or
+  adds one, also one a `.gitignore` pattern would hide; the fix is to run `dotnet pack` locally and commit the
   regenerated file, which puts the API change into the pull request.
 
 ### Changed
@@ -99,7 +106,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.0.0...v1.1.0

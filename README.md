@@ -84,10 +84,12 @@ The workflow finds everything by convention:
 | `.config/dotnet-tools.json` | Must include `dotnet-reportgenerator-globaltool` when `has-core` (two coverage reports are merged) |
 | `src/*/CompatibilitySuppressions.xml` | ApiCompat suppressions, committed; pack regenerates them, and a changed or new file fails the build |
 
-Pack runs package validation against the previous release (`PackageValidationBaselineVersion`) and, with
-`ApiCompatGenerateSuppressionFile`, rewrites `CompatibilitySuppressions.xml` instead of failing. The build fails
-when that changes a committed file or adds one, so every public API difference from the baseline shows up in the
-pull request: run `dotnet pack` locally and commit the regenerated file. Line endings don't count.
+Pack runs package validation against the previous release (`PackageValidationBaselineVersion`). The workflow
+packs with `-p:ApiCompatGenerateSuppressionFile=true`, so pack rewrites `CompatibilitySuppressions.xml` instead of
+failing, whatever the project sets. The build fails when that changes a committed file or adds one (also one a
+`.gitignore` pattern would hide), so every public API difference from the baseline shows up in the pull request:
+run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file. Line endings
+don't count.
 
 The smoke test project references the adapter as
 `<PackageReference Include="<Package>.TUnit" Version="$(SmokePackageVersion)" />` with a `*-*` default for
