@@ -10,16 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.0] - 2026-11-02: API compatibility suppression check
 
 Minor release. A repository whose packed API differs from its ApiCompat baseline in a way its committed
-`CompatibilitySuppressions.xml` does not record now fails CI: run `dotnet pack` locally and commit the regenerated
-file.
+`CompatibilitySuppressions.xml` does not record now fails CI: run
+`dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file.
 
 ### Added
 
 - **API compatibility suppression check** in `package-ci.yml`. Pack regenerated `CompatibilitySuppressions.xml`
   instead of failing on an API difference, so ApiCompat never blocked on its own. Both packs now pass
   `ApiCompatGenerateSuppressionFile=true`, and the build fails when pack changes a committed suppression file or
-  adds one, also one a `.gitignore` pattern would hide; the fix is to run `dotnet pack` locally and commit the
-  regenerated file, which puts the API change into the pull request.
+  adds one, also one a `.gitignore` pattern would hide; the fix is to run
+  `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file, which puts the
+  API change into the pull request.
 
 ### Changed
 

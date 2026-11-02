@@ -250,7 +250,7 @@ jobs:
             echo "The committed API compatibility suppressions match the packed packages."
             exit 0
           fi
-          echo "::error::Pack changed the API compatibility suppressions: the public API differs from the ApiCompat baseline in a way the committed CompatibilitySuppressions.xml does not record. Run dotnet pack locally and commit the regenerated file."
+          echo "::error::Pack changed the API compatibility suppressions: the public API differs from the ApiCompat baseline in a way the committed CompatibilitySuppressions.xml does not record. Run dotnet pack -p:ApiCompatGenerateSuppressionFile=true locally and commit the regenerated file."
           git --no-pager diff --ignore-cr-at-eol -- '*CompatibilitySuppressions.xml'
           if [ -n "$NEW_FILES" ]; then
             echo "New suppression files:"
