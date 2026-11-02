@@ -86,10 +86,10 @@ The workflow finds everything by convention:
 
 Pack runs package validation against the previous release (`PackageValidationBaselineVersion`). The workflow
 packs with `-p:ApiCompatGenerateSuppressionFile=true`, so pack rewrites `CompatibilitySuppressions.xml` instead of
-failing, whatever the project sets. The build fails when that changes a committed file or adds one (also one a
-`.gitignore` pattern would hide), so every public API difference from the baseline shows up in the pull request:
-run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file. Line endings
-don't count.
+failing, whatever the project sets. The build fails when that changes a committed file or adds one (including one
+that a `.gitignore` pattern would hide), so every public API difference from the baseline shows up in the pull
+request: run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file. Line
+endings don't count.
 
 The smoke test project references the adapter as
 `<PackageReference Include="<Package>.TUnit" Version="$(SmokePackageVersion)" />` with a `*-*` default for

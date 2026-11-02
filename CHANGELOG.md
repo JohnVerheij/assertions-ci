@@ -18,7 +18,7 @@ Minor release. A repository whose packed API differs from its ApiCompat baseline
 - **API compatibility suppression check** in `package-ci.yml`. Pack regenerated `CompatibilitySuppressions.xml`
   instead of failing on an API difference, so ApiCompat never blocked on its own. Both packs now pass
   `ApiCompatGenerateSuppressionFile=true`, and the build fails when pack changes a committed suppression file or
-  adds one, also one a `.gitignore` pattern would hide; the fix is to run
+  adds one, including one that a `.gitignore` pattern would hide; the fix is to run
   `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file, which puts the
   API change into the pull request.
 
