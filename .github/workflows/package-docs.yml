@@ -1,0 +1,130 @@
+name: Package docs
+
+# Reusable documentation site of a package repository: builds the projects (so the XML documentation exists), turns the
+# repository's Markdown files into docs/ pages, checks the internal links, builds the site with docfx, and on pushes
+# (not pull requests) deploys it to GitHub Pages. The link checker comes from this workflow's own commit.
+#
+# Caller permissions: contents: read, pages: write, id-token: write (the deploy job needs the last two).
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Package name without the .TUnit suffix, for example LogAssertions.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: docs-build-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    env:
+      PACKAGE: ${{ inputs.package }}
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ ! "$PACKAGE" =~ ^[A-Z][A-Za-z0-9]*Assertions$ ]]; then
+            echo "::error::Input 'package' must be a package name such as LogAssertions, got '$PACKAGE'"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout shared scripts
+        # job.workflow_sha is the commit of this reusable workflow, so the scripts match the pinned version.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JohnVerheij/assertions-ci
+          ref: ${{ job.workflow_sha }}
+          path: .assertions-ci
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore "${PACKAGE}.TUnit.slnx" --locked-mode
+
+      - name: Build (so XML docs exist in obj/)
+        run: dotnet build "${PACKAGE}.TUnit.slnx" --configuration Release --no-restore
+
+      - name: Restore .NET tools
+        run: dotnet tool restore
+
+      - name: Copy markdown sources into docs/
+        run: |
+          cp README.md docs/index.md
+          cp CHANGELOG.md docs/changelog.md
+          cp CONVENTIONS.md docs/conventions.md
+          cp CONTRIBUTING.md docs/contributing.md
+          cp CODE_OF_CONDUCT.md docs/coc.md
+          cp SECURITY.md docs/security.md
+          { echo "# License"; echo; echo '```'; cat LICENSE; echo '```'; } > docs/license.md
+          # rewrite cross-file links from repo-root names to the published site pages
+          PR_URL="https://github.com/${GITHUB_REPOSITORY}/blob/main/.github/PULL_REQUEST_TEMPLATE.md"
+          for f in docs/index.md docs/changelog.md docs/conventions.md docs/contributing.md docs/coc.md docs/security.md; do
+            sed -i -E \
+              -e 's#\]\((\./)?README\.md#](index.md#g' \
+              -e 's#\]\((\./)?CHANGELOG\.md#](changelog.md#g' \
+              -e 's#\]\((\./)?CONVENTIONS\.md#](conventions.md#g' \
+              -e 's#\]\((\./)?CONTRIBUTING\.md#](contributing.md#g' \
+              -e 's#\]\((\./)?CODE_OF_CONDUCT\.md#](coc.md#g' \
+              -e 's#\]\((\./)?SECURITY\.md#](security.md#g' \
+              -e 's#\]\((\./)?LICENSE\)#](license.md)#g' \
+              "$f"
+            sed -i "s#\.github/PULL_REQUEST_TEMPLATE\.md#${PR_URL}#g" "$f"
+          done
+
+      - name: Check internal doc links
+        run: python3 .assertions-ci/scripts/docs_linkcheck.py docs
+
+      - name: Build docs
+        run: dotnet docfx docs/docfx.json
+
+      - name: Setup Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: docs/_site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      pages: write      # publish the site to GitHub Pages
+      id-token: write   # the Pages deployment authenticates with an OIDC token
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

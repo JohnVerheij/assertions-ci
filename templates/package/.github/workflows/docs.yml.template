@@ -1,0 +1,21 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    uses: JohnVerheij/assertions-ci/.github/workflows/package-docs.yml@{{assertions-ci}}
+    with:
+      package: {{Package}}
+    permissions:
+      contents: read    # checkout and build
+      pages: write      # publish the site to GitHub Pages
+      id-token: write   # the Pages deployment authenticates with an OIDC token

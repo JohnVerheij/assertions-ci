@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import io
 import os
+import runpy
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 import release_notes as notes
 
@@ -100,6 +103,17 @@ class MainTests(unittest.TestCase):
         code, stdout = self.run_main("0.13.0")
         self.assertEqual(code, 1)
         self.assertIn("usage", stdout)
+
+
+    def test_runs_as_a_program(self):
+        argv = ["release_notes.py", "0.13.0", self.changelog, self.output]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()) as stdout, \
+                self.assertRaises(SystemExit) as raised:
+            runpy.run_path(notes.__file__, run_name="__main__")
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("for 0.13.0", stdout.getvalue())
+        with open(self.output, encoding="utf-8") as handle:
+            self.assertTrue(handle.read().startswith("## [0.13.0]"))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import os
+import runpy
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -163,6 +165,30 @@ class MainTests(RepoTestCase):
         with mock.patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(gate.main(), 1)
         self.assertIn("PACKAGE", stdout.getvalue())
+
+
+    def test_without_github_output_nothing_is_written_and_the_gate_passes(self):
+        self.projects("0.13.0", "0.13.0")
+        code, stdout, written = self.run_main(GITHUB_REF="refs/tags/v0.13.0", GITHUB_OUTPUT="")
+        self.assertEqual(code, 0)
+        self.assertEqual(written, "")
+        self.assertIn("Version 0.13.0 (prerelease: false, dry-run: false)", stdout)
+
+    def test_runs_as_a_program(self):
+        self.projects("0.13.0", "0.13.0")
+        output = os.path.join(self.root, "github_output")
+        env = {"PACKAGE": "LogAssertions", "GITHUB_REF": "refs/tags/v0.13.0", "GITHUB_OUTPUT": output}
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        with mock.patch.object(sys, "argv", ["release_version.py"]), mock.patch.dict(os.environ, env, clear=True), \
+                redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            try:
+                runpy.run_path(gate.__file__, run_name="__main__")
+            finally:
+                os.chdir(cwd)
+        self.assertEqual(raised.exception.code, 0)
+        with open(output, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "version=0.13.0\nprerelease=false\n")
 
 
 if __name__ == "__main__":

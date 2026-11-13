@@ -1,0 +1,53 @@
+name: Package lint
+
+# Reusable family lint for one package repository: the CHANGELOG format, the PackageTags order, known British
+# spellings in the tracked text files, the README facts (the TUnit minimum in every README, the family list in the
+# adapter README, the first row of the SECURITY.md supported-versions table), the shared files against the family
+# templates (templates/package/), and typos with the family dictionary (typos/family.toml). The scripts, templates and
+# dictionary come from this workflow's own commit, so they always match the version the caller pinned. See README.md
+# for the caller.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Family lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared scripts, templates and dictionary
+        # job.workflow_sha is the commit of this reusable workflow, so the scripts, the family templates and the
+        # spelling dictionary match the pinned version.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: JohnVerheij/assertions-ci
+          ref: ${{ job.workflow_sha }}
+          path: .assertions-ci
+          sparse-checkout: |
+            scripts
+            templates
+            typos
+          persist-credentials: false
+
+      - name: Family lint
+        run: python3 .assertions-ci/scripts/family_lint.py .
+
+      - name: Typos
+        # Common misspellings in every file, with the family dictionary; generated files and the shared clone are
+        # excluded there. Runs after a failed family lint too, so a pull request shows both. The pinned action pins
+        # the typos release it downloads.
+        if: ${{ !cancelled() }}
+        uses: crate-ci/typos@276087d9a4f06398b3e04825487805e2d7375888 # v1.52.2
+        with:
+          config: .assertions-ci/typos/family.toml

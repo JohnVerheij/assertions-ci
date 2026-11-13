@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
+
+Minor release. Three things:
+- A repository can target several .NET versions, for example `net10.0;net11.0`: every test suite, the smoke test and
+  the Native AOT gate run once per target framework, read from each project. A single-framework repository runs
+  exactly as before.
+- What every package repository kept its own copy of now lives here once: the support workflows (lint, docs, CodeQL,
+  zizmor), their scripts, the Renovate configuration, and the shared files as templates with a check. Nothing changes
+  for a repository until it moves its pin and runs `family_sync.py --write` (see the README, "Adopting 1.4.0").
+- New checks of what a consumer gets: NuGet package validation, the packed XML documentation, and the README code
+  samples compiled against the packed packages (reported, not yet enforced, until a repository opts in).
+
+### Added
+
+- **Target frameworks** step in `package-ci.yml`. It reads `TargetFrameworks` (or `TargetFramework`) of the core,
+  adapter, snapshot and smoke test projects with `dotnet msbuild -getProperty`, so adding a framework to a
+  repository needs no workflow change. A test project that targets anything other than `netX.Y` fails the build.
+- **Runtimes for every target framework.** The `global.json` SDK brings only its own runtime, so a second
+  `actions/setup-dotnet` step installs the SDK of each other .NET version the projects target. `global.json` keeps
+  selecting the pinned SDK. The step is skipped when all frameworks match the pinned SDK.
+- **Reusable support workflows:** `package-lint.yml`, `package-docs.yml`, `package-codeql.yml` (with the shared
+  `codeql/package-config.yml`) and `package-zizmor.yml`. They were identical in all nine package repositories; each
+  repository now keeps a thin caller. CodeQL now builds only the shipped projects (`src/*/*.csproj`): for C#, it
+  analyzes what the build compiles, so the repositories' `paths-ignore` of `tests/**` never applied. The docs
+  workflow also rewrites links to `README.md` to the site's `index.md`. `dependency-review.yml` (a required check) and `scorecard.yml` (Scorecard's
+  publishing rules) stay in the repositories.
+- **Shared scripts:** `scripts/family_lint.py` and `scripts/docs_linkcheck.py`, moved here from the repositories'
+  copies, with their tests. `family_lint.py` now also flags known British spellings in the tracked text files (a word
+  list: the spellings the family used before, the common -ise verbs and analyse; code such as `IsCancelled` passes)
+  and three README facts: the TUnit minimum in every README equals the central TUnit version, the adapter README
+  names every sibling package, and the first `SECURITY.md` supported-versions row is the current version line.
+  `docs_linkcheck.py` now skips links shown as code (fenced and inline code, and indented code outside lists and
+  footnotes) and reads angle-bracket link destinations as Markdown does.
+- **Renovate preset** `renovate/family.json`: the shared configuration of the package repositories. TUnit version
+  literals now also move in every README (the core READMEs were missed before), and a major update of a package of the
+  .NET release line waits for approval in the Dependency Dashboard instead of opening a pull request that would move
+  every target framework's entry.
+- **Family templates** `templates/package/` and `scripts/family_sync.py`: the files every repository shares, with
+  placeholders for the package name, the documentation domain, the assertions-ci pin and core-only lines. The check
+  (also run by `package-lint.yml`) reports missing, differing and obsolete files and missing local tools; `--write`
+  updates a repository and keeps its own pins of other actions, then lists the missing local tools it cannot add.
+  The workflow callers are stored as `.yml.template`, and `docs/docfx.json` as `docfx.json.template` (its
+  core-only line is not valid JSON). The templates fix drift found across the repositories: the `.gitattributes` snapshot rules and spelling, the
+  `.gitignore` entries, the unreachable `return true;` in `Directory.Build.targets` (CS0162 at pack), and docfx
+  reading `filterConfig.yml` as a page. The `Directory.Build.props` template sets `LangVersion` 15.0 (C# 15, from
+  the .NET 11 SDK the family builds with to target `net10.0` and `net11.0`).
+- **NuGet package validation** in `package-ci.yml`: Meziantou's validator checks every packed package for SourceLink
+  and a deterministic build, symbols whose sources resolve, XML documentation, readme, license, repository metadata,
+  tags and optimized assemblies; an icon is required from version 1.0.0. `scripts/nuget_validation_report.py` turns
+  its output into one annotation per rule. The published packages of all nine repositories pass apart from the icon.
+- **XML documentation check** in `package-ci.yml` (`scripts/xmldoc_check.py`): no empty member, no generator
+  placeholder summary (`Generated extension method for ...`), and every `<inheritdoc cref>` leads to a summary. The
+  packages built on TUnit 1.81.10 or later pass; the earlier ones carry placeholders that a rebuild removes.
+- **README code samples** in `package-ci.yml` (`scripts/readme_samples.py`, input `readme-samples`): every C# sample
+  of the READMEs compiles against the packed packages in a consumer-style project, with `#line` mapping each error to
+  its README line. `report` (the default) shows failures as warnings, `enforce` fails the build. The README describes
+  the sample conventions, `no-compile` and the optional `tests/ReadmeSamples.Prelude.cs`.
+- **Coverage per test run:** before the merge, the job summary shows each suite's coverage per framework and
+  assembly (`scripts/coverage_table.py`); report only.
+- **typos** in `package-lint.yml`, with the family dictionary `typos/family.toml` (generated files excluded, the
+  family's correct words listed). It finds no typos in the nine repositories today. A repository that allows only
+  selected actions must add `crate-ci/typos@*` to them (README, "Adopting 1.4.0").
+
+### Changed
+
+- The core, adapter and snapshot suites run with `--framework` for each target framework. Each run writes its
+  coverage report to its own output folder, and the merge step merges them all; the thresholds apply to the
+  merged report, as before.
+- The smoke test runs on each target framework, and the Native AOT gate publishes and runs one native executable
+  per target framework.
+- A suite, smoke test or Native AOT gate that fails on one framework still runs on the others; the step then fails
+  with one error that names the frameworks that failed.
+- The build job's timeout is 30 minutes instead of 20, since a two-framework repository runs every suite twice.
+- This repository's Renovate configuration extends the family preset, as every package repository does, and keeps
+  the action pins in the workflow templates and the pinned tool versions current.
+- This repository's own checks: actionlint and zizmor also check the workflow templates, rendered for a demo package
+  (`scripts/render_templates.py`); `renovate-config.yml` validates the preset, the repository template and this
+  configuration with Renovate's validator, all three as repository configuration; `spelling.yml` runs typos with the family dictionary; `scripts.yml` measures
+  the script tests and fails below 90% line and branch coverage. Every script is at 100%.
+- The template `.gitignore` ignores `tests/.readme-samples/`, the generated sample project.
+
 ## [1.3.0] - 2026-11-02: API compatibility suppression check
 
 Minor release. A repository whose packed API differs from its ApiCompat baseline in a way its committed
@@ -107,7 +188,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.1.0...v1.2.0

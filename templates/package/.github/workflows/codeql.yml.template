@@ -1,0 +1,23 @@
+name: CodeQL
+
+# No path filters: CodeQL analyzes every change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    uses: JohnVerheij/assertions-ci/.github/workflows/package-codeql.yml@{{assertions-ci}}
+    permissions:
+      contents: read           # checkout + build
+      security-events: write   # upload CodeQL results to code scanning
+      actions: read            # read workflow run metadata during analysis

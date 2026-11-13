@@ -24,6 +24,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run unit tests
-        # The scripts use only the Python standard library, so the runner's python3 is enough.
-        run: python3 -m unittest discover -s scripts -v
+      - name: Install coverage.py
+        # The scripts use only the Python standard library; coverage.py measures the tests. A virtual
+        # environment, because the runner's Python is externally managed; every file hash is pinned.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps -r scripts/requirements-ci.txt
+
+      - name: Run unit tests with coverage
+        # Fails below 90% line and branch coverage of the scripts (the tests are not measured).
+        run: |
+          PYTHON="$RUNNER_TEMP/venv/bin/python"
+          "$PYTHON" -m coverage run --branch --source=scripts --omit='scripts/test_*.py' -m unittest discover -s scripts -v
+          "$PYTHON" -m coverage report --show-missing --fail-under=90

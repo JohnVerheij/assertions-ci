@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import os
+import runpy
+import sys
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
@@ -138,6 +140,29 @@ class MainTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True), redirect_stdout(stdout):
             self.assertEqual(verify.main(fetcher(api())), 1)
         self.assertIn("GITHUB_REPOSITORY", stdout.getvalue())
+
+
+    def test_without_a_fetcher_the_api_is_used_with_the_configured_url_and_token(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = io.BytesIO(b'{"object": {"type": "commit", "sha": "x"}}')
+        stdout = io.StringIO()
+        env = {**self.ENV, "GITHUB_API_URL": "https://api.example.test", "GITHUB_TOKEN": "secret"}
+        with mock.patch.dict(os.environ, env, clear=True), redirect_stdout(stdout), \
+                mock.patch("urllib.request.urlopen", return_value=response) as urlopen:
+            code = verify.main()
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, f"https://api.example.test/repos/{REPO}/git/ref/tags/v0.13.0")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(code, 1)
+        self.assertIn("lightweight tag", stdout.getvalue())
+
+    def test_runs_as_a_program(self):
+        env = {**self.ENV, "GITHUB_REF": "refs/heads/main"}
+        with mock.patch.object(sys, "argv", ["verify_tag.py"]), mock.patch.dict(os.environ, env, clear=True), \
+                redirect_stdout(io.StringIO()) as stdout, self.assertRaises(SystemExit) as raised:
+            runpy.run_path(verify.__file__, run_name="__main__")
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("must run on a tag", stdout.getvalue())
 
 
 class ApiFetcherTests(unittest.TestCase):

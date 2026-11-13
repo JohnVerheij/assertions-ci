@@ -1,0 +1,15 @@
+name: Family Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    uses: JohnVerheij/assertions-ci/.github/workflows/package-lint.yml@{{assertions-ci}}
+    permissions:
+      contents: read   # checkout only

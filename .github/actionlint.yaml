@@ -9,3 +9,15 @@ paths:
     ignore:
       # Same job.workflow_sha property as above; remove together.
       - 'property "workflow_sha" is not defined'
+  .github/workflows/package-codeql.yml:
+    ignore:
+      # Same job.workflow_sha property as above; remove together.
+      - 'property "workflow_sha" is not defined'
+  .github/workflows/package-docs.yml:
+    ignore:
+      # Same job.workflow_sha property as above; remove together.
+      - 'property "workflow_sha" is not defined'
+  .github/workflows/package-lint.yml:
+    ignore:
+      # Same job.workflow_sha property as above; remove together.
+      - 'property "workflow_sha" is not defined'

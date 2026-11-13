@@ -1,0 +1,12 @@
+name: 'Package CodeQL configuration'
+
+# Shared by every package repository through package-codeql.yml.
+#
+# C#: CodeQL analyzes the code the build compiles, and paths-ignore does not apply to a compiled language. So
+# package-codeql.yml builds only the shipped projects (src/*/*.csproj), and the tests are not analyzed: test code
+# legitimately uses patterns (mock helpers, ad-hoc fixtures) that production rules flag. Code that source generators
+# add to those projects is analyzed, because it ships in the packages.
+#
+# GitHub Actions: CodeQL reads the workflow files themselves, so paths-ignore applies.
+paths-ignore:
+  - '.assertions-ci/**'   # the shared files package-codeql.yml checks out next to the repository

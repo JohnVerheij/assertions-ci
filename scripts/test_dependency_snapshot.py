@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import runpy
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -103,6 +105,16 @@ class ManifestTests(unittest.TestCase):
         shared = snap.manifest(data, ROOT)["resolved"]["pkg:nuget/Shared@1.0.0"]
         self.assertEqual((shared["relationship"], shared["scope"]), ("direct", "runtime"))
 
+    def test_package_that_is_indirect_in_every_framework_stays_indirect(self):
+        targets = {
+            "net9.0": {"Root/1.0.0": package("Shared"), "Shared/1.0.0": package("A"), "A/1.0.0": package()},
+            "net10.0": {"Root/1.0.0": package("Shared"), "Shared/1.0.0": package("B"), "B/1.0.0": package()},
+        }
+        data = assets("src/Lib/Lib.csproj", {"Root": {"target": "Package"}}, targets, frameworks=("net9.0", "net10.0"))
+        shared = snap.manifest(data, ROOT)["resolved"]["pkg:nuget/Shared@1.0.0"]
+        self.assertEqual(shared["relationship"], "indirect")
+        self.assertEqual(shared["dependencies"], ["pkg:nuget/A@1.0.0", "pkg:nuget/B@1.0.0"])
+
     def test_resolved_entries_are_sorted(self):
         entry = snap.manifest(assets("src/Lib/Lib.csproj", LIBRARY_DIRECT, LIBRARY_TARGETS), ROOT)
         self.assertEqual(list(entry["resolved"]), sorted(entry["resolved"]))
@@ -182,6 +194,23 @@ class MainTests(unittest.TestCase):
         with redirect_stdout(stdout):
             self.assertEqual(snap.main(["dependency_snapshot.py"], self.root), 1)
         self.assertIn("usage", stdout.getvalue())
+
+
+    def test_runs_as_a_program(self):
+        self.write_assets("src/Lib/Lib.csproj", assets("x", LIBRARY_DIRECT, LIBRARY_TARGETS))
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        with mock.patch.object(sys, "argv", ["dependency_snapshot.py", self.output]), \
+                mock.patch.dict(os.environ, SnapshotTests.ENV, clear=True), \
+                redirect_stdout(io.StringIO()) as stdout, self.assertRaises(SystemExit) as raised:
+            try:
+                runpy.run_path(snap.__file__, run_name="__main__")
+            finally:
+                os.chdir(cwd)
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("src/Lib/Lib.csproj: 4 packages (2 runtime)", stdout.getvalue())
+        with open(self.output, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["sha"], "a" * 40)
 
 
 if __name__ == "__main__":

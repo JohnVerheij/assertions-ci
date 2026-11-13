@@ -1,0 +1,45 @@
+name: Renovate config
+
+# Every package repository reads the family preset from main, so a broken preset would stop Renovate in all of them
+# at once. This check validates it, the repository template that extends it and this repository's own configuration
+# on every pull request, before anything reaches main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-config-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Renovate configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate this repository's configuration
+        # Renovate's own validator, without arguments: it finds .github/renovate.json and checks it as a repository
+        # configuration. --strict also fails on a configuration that needs a migration. The image is pinned by
+        # digest; Renovate updates it.
+        uses: docker://ghcr.io/renovatebot/renovate:44.238.0@sha256:9f3b520cdf749cf43164e7d809b37001b2f75f4a08b2a78d25a98bfb0abdd7bf
+        with:
+          entrypoint: renovate-config-validator
+          args: --strict
+
+      - name: Validate the family preset and the repository template
+        # Files named on the command line count as global (self-hosted) configuration, where options such as
+        # autodiscover are valid; --no-global checks them as repository configuration, which is what they are.
+        uses: docker://ghcr.io/renovatebot/renovate:44.238.0@sha256:9f3b520cdf749cf43164e7d809b37001b2f75f4a08b2a78d25a98bfb0abdd7bf
+        with:
+          entrypoint: renovate-config-validator
+          args: --strict --no-global renovate/family.json templates/package/.github/renovate.json
