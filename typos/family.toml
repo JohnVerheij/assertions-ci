@@ -1,0 +1,36 @@
+# Spelling check of the package family with typos (crate-ci/typos), run by package-lint.yml and on this repository.
+# typos knows common misspellings, so it has few false positives; the words below are correct in the family.
+# British spellings are not checked here: family_lint.py does that, with the exemptions released API names need.
+
+[files]
+extend-exclude = [
+  # The shared clone of assertions-ci in a package repository's CI workspace.
+  ".assertions-ci/",
+  # Generated: public API snapshots, test baselines, lock files and the docs site.
+  "*.verified.txt",
+  "*.received.txt",
+  "*.expected.txt",
+  "*.baseline.txt",
+  "**/Snapshots/**",
+  "packages.lock.json",
+  "docs/_site/",
+]
+
+[default]
+extend-ignore-re = [
+  # Letters right before a \uXXXX escape belong to the escaped word, for example café.
+  '[A-Za-z]+\\u[0-9A-Fa-f]{4}',
+  # A line ending in a spellchecker:disable-line comment, for a deliberate misspelling such as a word list.
+  '(?Rm)^.*(#|//)\s*spellchecker:disable-line$',
+]
+
+[default.extend-words]
+# ACI: assertions-ci, in names such as ACI_PIN_RE.
+aci = "aci"
+# in-toto attestation files: <Package>.<version>.intoto.jsonl.
+intoto = "intoto"
+# OCE: OperationCanceledException, in names such as TokenCanceledBareOce.
+oce = "oce"
+unparseable = "unparseable"
+enumerables = "enumerables"
+canonicalizations = "canonicalizations"

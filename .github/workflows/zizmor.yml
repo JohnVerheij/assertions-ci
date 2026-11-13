@@ -29,6 +29,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Render the workflow templates
+        # The workflow templates are what every package repository runs. Rendered for a demo package into this
+        # workspace only, as template-<name>.yml, they are audited with the workflows of this repository.
+        run: python3 scripts/render_templates.py .github/workflows
+
       - name: Run zizmor
         # Static analysis of every workflow under .github/. advanced-security: false makes
         # zizmor exit non-zero on any finding (template injection, dangerous trigger,

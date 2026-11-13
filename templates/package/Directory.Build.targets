@@ -1,0 +1,83 @@
+<Project>
+
+  <!--
+    Auto-extracts the section for the current package version from CHANGELOG.md and feeds it
+    into the release-notes property at pack time, so the Release Notes tab on nuget.org shows
+    the per-version section body rather than the literal csproj fallback. The extracted body is
+    trimmed of surrounding whitespace, and where a repository URL is available the matching
+    GitHub release-tag URL is prepended to it. The csproj value remains the fallback, and the
+    auto-extract overrides it whenever a matching CHANGELOG section is found.
+
+    Two failure modes are non-fatal. An absent CHANGELOG.md skips the target through its
+    condition, and a CHANGELOG.md carrying no section for the current version emits an MSBuild
+    warning and leaves the csproj fallback in place; packing succeeds either way. A read error
+    on a CHANGELOG.md that does exist is not handled and will fail the pack.
+
+    Mirrors the family pattern: Directory.Build.props carries property defaults, and this file
+    carries the build extension that runs once the SDK has set the version property.
+  -->
+  <UsingTask TaskName="ExtractChangelogSection"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <ChangelogPath ParameterType="System.String" Required="true" />
+      <Version       ParameterType="System.String" Required="true" />
+      <RepositoryUrl ParameterType="System.String" Required="false" />
+      <Notes         ParameterType="System.String" Output="true" />
+      <Found         ParameterType="System.Boolean" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Found = false;
+        Notes = string.Empty;
+        if (!File.Exists(ChangelogPath))
+        {
+            return true;
+        }
+        var text = File.ReadAllText(ChangelogPath, Encoding.UTF8);
+        var pattern = @"^##\s+\[" + Regex.Escape(Version) + @"\][^\r\n]*\r?\n(?<body>.*?)(?=^##\s+\[|\z)";
+        var match = Regex.Match(text, pattern, RegexOptions.Multiline | RegexOptions.Singleline);
+        if (!match.Success)
+        {
+            return true;
+        }
+        var body = match.Groups["body"].Value.Trim('\r', '\n', ' ', '\t');
+        if (!string.IsNullOrEmpty(RepositoryUrl))
+        {
+            // nuget.org renders the Release Notes tab as plaintext-with-line-breaks rather
+            // than rendered markdown (NuGet/NuGetGallery#8889 is the open feature request).
+            // Prepending the matching GitHub Release URL gives consumers a one-click route to
+            // the rendered-markdown version while keeping the extracted body inline below.
+            Notes = "View the rendered release notes: " + RepositoryUrl + "/releases/tag/v" + Version + "\n\n" + body;
+        }
+        else
+        {
+            Notes = body;
+        }
+        Found = true;
+      ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="SetPackageReleaseNotesFromChangelog"
+          BeforeTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true' AND '$(Version)' != '' AND Exists('$(MSBuildThisFileDirectory)CHANGELOG.md')">
+    <ExtractChangelogSection ChangelogPath="$(MSBuildThisFileDirectory)CHANGELOG.md"
+                             Version="$(Version)"
+                             RepositoryUrl="$(RepositoryUrl)">
+      <Output TaskParameter="Notes" PropertyName="_ChangelogNotes" />
+      <Output TaskParameter="Found" PropertyName="_ChangelogFound" />
+    </ExtractChangelogSection>
+    <PropertyGroup Condition="'$(_ChangelogFound)' == 'true'">
+      <PackageReleaseNotes>$(_ChangelogNotes)</PackageReleaseNotes>
+    </PropertyGroup>
+    <Warning Condition="'$(_ChangelogFound)' != 'true'"
+             Text="CHANGELOG.md has no '## [$(Version)]' section; PackageReleaseNotes falls back to the csproj default." />
+  </Target>
+
+</Project>

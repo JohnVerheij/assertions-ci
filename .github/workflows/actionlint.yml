@@ -24,6 +24,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Render the workflow templates
+        # The workflow templates (templates/package/.github/workflows/*.yml.template) are what every package
+        # repository runs. Rendered for a demo package into this workspace only, as template-<name>.yml, they are
+        # linted with the workflows of this repository.
+        run: python3 scripts/render_templates.py .github/workflows
+
       - name: Register problem matcher
         # Turns each actionlint finding (file:line:col: message [rule]) into an annotation on the pull
         # request, so findings are visible without opening the job log.

@@ -44,6 +44,11 @@ on:
         required: false
         type: string
         default: ''
+      readme-samples:
+        description: What a C# sample in the READMEs that does not compile against the packed packages does. report (a warning) or enforce (fails the build). See the README for the sample conventions.
+        required: false
+        type: string
+        default: report
       release:
         description: Release build. Adds the version gate, release notes, a CycloneDX SBOM and an OpenVEX document per package, and uploads them with the packages and a SHA256SUMS file as the release-packages artifact. Skips the Codecov upload.
         required: false
@@ -64,7 +69,7 @@ jobs:
   build:
     name: Build, test & pack
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30   # every suite, the smoke test and the Native AOT gate run once per target framework
     permissions:
       contents: read   # checkout only: build and test code never runs next to a credential
     outputs:
@@ -77,9 +82,15 @@ jobs:
 
     steps:
       - name: Validate inputs
+        env:
+          README_SAMPLES: ${{ inputs.readme-samples }}
         run: |
           if [[ ! "$PACKAGE" =~ ^[A-Z][A-Za-z0-9]*Assertions$ ]]; then
             echo "::error::Input 'package' must be a package name such as LogAssertions, got '$PACKAGE'"
+            exit 1
+          fi
+          if [[ "$README_SAMPLES" != report && "$README_SAMPLES" != enforce ]]; then
+            echo "::error::Input 'readme-samples' must be report or enforce, got '$README_SAMPLES'"
             exit 1
           fi
 
@@ -124,6 +135,69 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Target frameworks
+        # Each suite runs once per target framework of its project, read from the project itself, so a repository
+        # that adds a framework needs no workflow change. The global.json SDK brings only its own runtime; the
+        # others are installed in the next step. A single-framework repository runs as before.
+        id: frameworks
+        env:
+          HAS_CORE: ${{ inputs.has-core }}
+        run: |
+          frameworks() {
+            local VALUE
+            if ! VALUE=$(dotnet msbuild "$1" -getProperty:TargetFrameworks); then
+              echo "::error::Could not read the target frameworks of $1: $VALUE" >&2
+              return 1
+            fi
+            if [ -z "$VALUE" ] && ! VALUE=$(dotnet msbuild "$1" -getProperty:TargetFramework); then
+              echo "::error::Could not read the target framework of $1: $VALUE" >&2
+              return 1
+            fi
+            VALUE=$(tr ';' ' ' <<< "$VALUE" | xargs)
+            if [ -z "$VALUE" ]; then
+              echo "::error::$1 declares no target framework" >&2
+              return 1
+            fi
+            echo "$VALUE"
+          }
+          CORE=""
+          if [ "$HAS_CORE" = true ]; then
+            CORE=$(frameworks "tests/${PACKAGE}.Tests/${PACKAGE}.Tests.csproj")
+          fi
+          ADAPTER=$(frameworks "tests/${PACKAGE}.TUnit.Tests/${PACKAGE}.TUnit.Tests.csproj")
+          SNAPSHOT=$(frameworks "tests/${PACKAGE}.TUnit.SnapshotTests/${PACKAGE}.TUnit.SnapshotTests.csproj")
+          SMOKE=$(frameworks "tests/${PACKAGE}.TUnit.SmokeTest/${PACKAGE}.TUnit.SmokeTest.csproj")
+          SDK_CHANNEL=$(dotnet --version | cut -d. -f1,2)
+          CHANNELS=""
+          for TFM in $CORE $ADAPTER $SNAPSHOT $SMOKE; do
+            if [[ ! "$TFM" =~ ^net([0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::Unsupported target framework '$TFM' in a test project"
+              exit 1
+            fi
+            CHANNEL="${BASH_REMATCH[1]}"
+            if [ "$CHANNEL" != "$SDK_CHANNEL" ] && [[ " $CHANNELS " != *" $CHANNEL "* ]]; then
+              CHANNELS="$CHANNELS $CHANNEL"
+            fi
+          done
+          CHANNELS=$(xargs <<< "$CHANNELS")
+          {
+            echo "core=$CORE"
+            echo "adapter=$ADAPTER"
+            echo "snapshot=$SNAPSHOT"
+            echo "smoke=$SMOKE"
+            echo "runtimes<<RUNTIMES"
+            for CHANNEL in $CHANNELS; do echo "${CHANNEL}.x"; done
+            echo "RUNTIMES"
+          } >> "$GITHUB_OUTPUT"
+          echo "SDK $(dotnet --version); core: ${CORE:-none}; adapter: $ADAPTER; snapshot: $SNAPSHOT; smoke: $SMOKE; other runtimes: ${CHANNELS:-none}"
+
+      - name: Setup .NET for the other target frameworks
+        # The SDK of each other channel, for its runtime; global.json keeps selecting the pinned SDK.
+        if: steps.frameworks.outputs.runtimes != ''
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ steps.frameworks.outputs.runtimes }}
+
       - name: Restore
         # Locked mode: every package must match packages.lock.json. The repositories already set
         # RestoreLockedMode on GitHub Actions; the flag makes it explicit where it runs.
@@ -144,32 +218,66 @@ jobs:
       - name: Test core suite (with coverage)
         # The core test project references only the core package, so a TUnit type leaking into the
         # core's public surface fails to compile here. The = form of --coverage-output-format avoids a
-        # documented MTP space-form mis-parse.
+        # documented MTP space-form mis-parse. Each framework writes its report under its own output folder
+        # (bin/Release/<tfm>/TestResults), and the merge step takes them all.
         if: inputs.has-core
+        env:
+          FRAMEWORKS: ${{ steps.frameworks.outputs.core }}
         run: |
-          dotnet run --project "tests/${PACKAGE}.Tests/${PACKAGE}.Tests.csproj" \
-            --configuration Release --no-build \
-            -- \
-            --coverage \
-            --coverage-settings .config/codecoverage.settings.xml \
-            --coverage-output coverage.cobertura.xml \
-            --coverage-output-format=cobertura
+          FAILED=""
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Core suite on $TFM"
+            dotnet run --project "tests/${PACKAGE}.Tests/${PACKAGE}.Tests.csproj" \
+              --framework "$TFM" --configuration Release --no-build \
+              -- \
+              --coverage \
+              --coverage-settings .config/codecoverage.settings.xml \
+              --coverage-output coverage.cobertura.xml \
+              --coverage-output-format=cobertura || FAILED="$FAILED $TFM"
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Core suite failed on:$FAILED"
+            exit 1
+          fi
 
       - name: Test adapter suite (with coverage)
+        env:
+          FRAMEWORKS: ${{ steps.frameworks.outputs.adapter }}
         run: |
-          dotnet run --project "tests/${PACKAGE}.TUnit.Tests/${PACKAGE}.TUnit.Tests.csproj" \
-            --configuration Release --no-build \
-            -- \
-            --coverage \
-            --coverage-settings .config/codecoverage.settings.xml \
-            --coverage-output coverage.cobertura.xml \
-            --coverage-output-format=cobertura
+          FAILED=""
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Adapter suite on $TFM"
+            dotnet run --project "tests/${PACKAGE}.TUnit.Tests/${PACKAGE}.TUnit.Tests.csproj" \
+              --framework "$TFM" --configuration Release --no-build \
+              -- \
+              --coverage \
+              --coverage-settings .config/codecoverage.settings.xml \
+              --coverage-output coverage.cobertura.xml \
+              --coverage-output-format=cobertura || FAILED="$FAILED $TFM"
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Adapter suite failed on:$FAILED"
+            exit 1
+          fi
 
       - name: Test snapshot suite (no coverage)
         # Pins the public API surface; it measures surface, not behavior, so it adds nothing to coverage.
+        env:
+          FRAMEWORKS: ${{ steps.frameworks.outputs.snapshot }}
         run: |
-          dotnet run --project "tests/${PACKAGE}.TUnit.SnapshotTests/${PACKAGE}.TUnit.SnapshotTests.csproj" \
-            --configuration Release --no-build
+          FAILED=""
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Snapshot suite on $TFM"
+            dotnet run --project "tests/${PACKAGE}.TUnit.SnapshotTests/${PACKAGE}.TUnit.SnapshotTests.csproj" \
+              --framework "$TFM" --configuration Release --no-build || FAILED="$FAILED $TFM"
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Snapshot suite failed on:$FAILED"
+            exit 1
+          fi
 
       - name: Merge coverage reports
         id: coverage
@@ -179,6 +287,9 @@ jobs:
             echo "::error::No cobertura coverage report found"
             exit 1
           fi
+          # Each run's coverage per assembly, also in the job summary: a lower rate on one framework shows code
+          # that only the other framework covers. Report only; the thresholds apply to the merged report.
+          python3 .assertions-ci/scripts/coverage_table.py "${REPORTS[@]}"
           if [ "${#REPORTS[@]}" -eq 1 ]; then
             MERGED="${REPORTS[0]}"
           else
@@ -275,6 +386,36 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Adapter package: ${NUPKGS[0]} (version $VERSION)"
 
+      - name: NuGet package validation
+        # Meziantou's validation of every packed package: SourceLink and a deterministic build, symbols whose sources
+        # resolve, XML documentation, readme, license, repository metadata, tags and optimized assemblies. An icon is
+        # required from 1.0.0; the packages omit it before (their csproj files record that). The tool comes from
+        # nuget.org at the version below, which Renovate updates in assertions-ci.
+        env:
+          # renovate: datasource=nuget depName=Meziantou.Framework.NuGetPackageValidation.Tool
+          NUGET_VALIDATION_VERSION: 2.0.21
+          VERSION: ${{ steps.adapter.outputs.version }}
+        run: |
+          dotnet tool install Meziantou.Framework.NuGetPackageValidation.Tool \
+            --version "$NUGET_VALIDATION_VERSION" --tool-path "$RUNNER_TEMP/nuget-validation"
+          EXCLUDED=()
+          if [[ "$VERSION" == 0.* ]]; then
+            EXCLUDED=(--excluded-rules IconMustBeSet)
+          fi
+          STATUS=0
+          "$RUNNER_TEMP/nuget-validation/meziantou.validate-nuget-package" ./artifacts/*.nupkg "${EXCLUDED[@]}" \
+            > "$RUNNER_TEMP/nuget-validation.json" || STATUS=$?
+          python3 .assertions-ci/scripts/nuget_validation_report.py "$RUNNER_TEMP/nuget-validation.json"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::meziantou.validate-nuget-package exited with $STATUS"
+            exit 1
+          fi
+
+      - name: XML documentation
+        # What an IDE shows for the packed assemblies: no empty member, no generator placeholder summary, and every
+        # <inheritdoc cref> leads to a summary (scripts/xmldoc_check.py).
+        run: python3 .assertions-ci/scripts/xmldoc_check.py ./artifacts/*.nupkg
+
       - name: Verify package contents
         # Assets that unit tests cannot see (for example build/*.targets) but consumers depend on.
         if: inputs.expected-package-files != ''
@@ -303,6 +444,7 @@ jobs:
         # No locked mode here: the package was packed in this run, so its hash can't be in a lock file.
         env:
           SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
+          FRAMEWORKS: ${{ steps.frameworks.outputs.smoke }}
         run: |
           SMOKE="tests/${PACKAGE}.TUnit.SmokeTest/${PACKAGE}.TUnit.SmokeTest.csproj"
           dotnet restore "$SMOKE" \
@@ -311,17 +453,76 @@ jobs:
             --source "$GITHUB_WORKSPACE/artifacts" \
             --source "https://api.nuget.org/v3/index.json"
           dotnet build "$SMOKE" --configuration Release --no-restore -p:SmokePackageVersion="$SMOKE_VERSION"
-          dotnet run --project "$SMOKE" --configuration Release --no-build -p:SmokePackageVersion="$SMOKE_VERSION"
+          FAILED=""
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Smoke test on $TFM"
+            dotnet run --project "$SMOKE" --framework "$TFM" --configuration Release --no-build \
+              -p:SmokePackageVersion="$SMOKE_VERSION" || FAILED="$FAILED $TFM"
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Smoke test failed on:$FAILED"
+            exit 1
+          fi
+
+      - name: README code samples
+        # Every C# sample in the READMEs compiles against the packed packages, the way a consumer would paste it:
+        # scripts/readme_samples.py writes tests/.readme-samples/ from the smoke test project (its package
+        # references, the packed version, implicit usings on) with #line directives back to each README line. With
+        # readme-samples: enforce a failure fails the build. With report it is a warning: the first ten errors as
+        # annotations on their README lines (GitHub's limit per step), all of them in the job summary.
+        env:
+          VERSION: ${{ steps.adapter.outputs.version }}
+          FRAMEWORKS: ${{ steps.frameworks.outputs.smoke }}
+          MODE: ${{ inputs.readme-samples }}
+        run: |
+          PROJECT=tests/.readme-samples/ReadmeSamples.csproj
+          LOG="$RUNNER_TEMP/readme-samples.log"
+          STATUS=0
+          {
+            python3 .assertions-ci/scripts/readme_samples.py "$PACKAGE" "$VERSION" "$FRAMEWORKS" &&
+            dotnet restore "$PROJECT" --force-evaluate \
+              --source "$GITHUB_WORKSPACE/artifacts" \
+              --source "https://api.nuget.org/v3/index.json" &&
+            dotnet build "$PROJECT" --configuration Release --no-restore
+          } > "$LOG" 2>&1 || STATUS=$?
+          head -1 "$LOG"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Every README sample compiles."
+            exit 0
+          fi
+          if [ "$MODE" = enforce ]; then
+            cat "$LOG"
+            echo "::error::README samples do not compile against the packed packages (see the errors above)."
+            exit 1
+          fi
+          ERRORS=$(grep -E ': error [A-Z]+[0-9]+:' "$LOG" | sed -E 's/ \[[^]]*\]$//' | sed -E "s#^$GITHUB_WORKSPACE/##" \
+            | sort -u || true)
+          if [ -z "$ERRORS" ]; then
+            # No compiler error: the generation or the restore failed.
+            cat "$LOG"
+          else
+            echo "$ERRORS" | sed -E 's#^(.+)\(([0-9]+),([0-9]+)\): error ([A-Z]+[0-9]+): #::warning file=\1,line=\2,col=\3::\4 #'
+            {
+              echo "### README samples that do not compile"
+              echo
+              echo '```text'
+              echo "$ERRORS"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "::warning::README samples do not compile against the packed packages (readme-samples: report; enforce makes this fail the build)."
 
       - name: Native AOT gate
         # Publishes the smoke consumer with Native AOT and runs the native executable, which executes the
         # smoke tests compiled ahead of time. PublishAot is passed to the restore as well, so the ILCompiler
-        # packages are in the restore graph; without that, publish silently produces a managed build.
+        # packages are in the restore graph; without that, publish silently produces a managed build. One native
+        # executable per target framework.
         env:
           SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
+          FRAMEWORKS: ${{ steps.frameworks.outputs.smoke }}
         run: |
           SMOKE="tests/${PACKAGE}.TUnit.SmokeTest/${PACKAGE}.TUnit.SmokeTest.csproj"
-          OUT="$RUNNER_TEMP/aot"
           dotnet restore "$SMOKE" \
             --runtime linux-x64 \
             --force-evaluate \
@@ -329,29 +530,46 @@ jobs:
             -p:SmokePackageVersion="$SMOKE_VERSION" \
             --source "$GITHUB_WORKSPACE/artifacts" \
             --source "https://api.nuget.org/v3/index.json"
-          dotnet publish "$SMOKE" \
-            --configuration Release \
-            --runtime linux-x64 \
-            --no-restore \
-            -p:PublishAot=true \
-            -p:SmokePackageVersion="$SMOKE_VERSION" \
-            --output "$OUT"
-          EXE="$OUT/Smoke.Consumer"
-          if [ ! -x "$EXE" ]; then
-            echo "::error::Native executable $EXE was not produced"
-            ls -la "$OUT"
-            exit 1
-          fi
-          if ! file "$EXE" | grep -q 'ELF 64-bit'; then
-            echo "::error::$EXE is not a native ELF executable: $(file "$EXE")"
-            exit 1
-          fi
-          if [ -e "$OUT/Smoke.Consumer.dll" ]; then
-            echo "::error::Smoke.Consumer.dll is present, so the publish was managed, not Native AOT"
-            exit 1
-          fi
-          echo "Native executable: $(file "$EXE")"
-          "$EXE"
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Native AOT on $TFM"
+            OUT="$RUNNER_TEMP/aot/$TFM"
+            if ! dotnet publish "$SMOKE" \
+              --framework "$TFM" \
+              --configuration Release \
+              --runtime linux-x64 \
+              --no-restore \
+              -p:PublishAot=true \
+              -p:SmokePackageVersion="$SMOKE_VERSION" \
+              --output "$OUT"; then
+              echo "::endgroup::"
+              echo "::error::Native AOT publish failed on $TFM"
+              exit 1
+            fi
+            EXE="$OUT/Smoke.Consumer"
+            if [ ! -x "$EXE" ]; then
+              echo "::endgroup::"
+              echo "::error::Native executable $EXE was not produced"
+              ls -la "$OUT"
+              exit 1
+            fi
+            if ! file "$EXE" | grep -q 'ELF 64-bit'; then
+              echo "::endgroup::"
+              echo "::error::$EXE is not a native ELF executable: $(file "$EXE")"
+              exit 1
+            fi
+            if [ -e "$OUT/Smoke.Consumer.dll" ]; then
+              echo "::endgroup::"
+              echo "::error::Smoke.Consumer.dll is present, so the $TFM publish was managed, not Native AOT"
+              exit 1
+            fi
+            echo "Native executable ($TFM): $(file "$EXE")"
+            if ! "$EXE"; then
+              echo "::endgroup::"
+              echo "::error::The native smoke test failed on $TFM"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
 
       - name: Release files
         # The exact packages that passed every gate above, with a CycloneDX 1.6 SBOM and an OpenVEX document per

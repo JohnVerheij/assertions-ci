@@ -1,0 +1,18 @@
+name: 'Package CodeQL configuration'
+
+# Shared by every package repository through package-codeql.yml. Limits CodeQL scanning to code we own and ship.
+#
+# Without this:
+#   * obj/.../*.g.cs (TUnit [AssertionExtension] source-generator output, the LoggerMessage and configuration-binder
+#     source generators, and any other source-generated files) is scanned. Findings against generated code are not
+#     actionable: we cannot edit it, and it is rewritten on every build.
+#   * tests/** is scanned with production-shaped rules. Test code legitimately uses patterns (mock helpers, ad-hoc
+#     fixtures) that production rules flag as smells but are appropriate in a test context.
+#
+# Effect on the security-extended query pack: noise from generated code disappears, and the remaining findings reflect
+# issues in production code that we maintain and can act on.
+paths-ignore:
+  - '**/obj/**'
+  - '**/bin/**'
+  - 'tests/**'
+  - '.assertions-ci/**'   # the shared files package-codeql.yml checks out next to the repository

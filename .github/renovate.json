@@ -1,26 +1,35 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "The family preset, as every package repository uses it (read from main; renovate-config.yml validates it on every pull request).",
   "extends": [
-    "config:recommended",
-    ":timezone(Europe/Amsterdam)",
-    ":semanticCommits",
-    "helpers:pinGitHubActionDigestsToSemver"
+    "github>JohnVerheij/assertions-ci//renovate/family",
+    "customManagers:githubActionsVersions"
   ],
-  "schedule": [
-    "before 4am"
-  ],
-  "labels": [
-    "dependencies"
-  ],
-  "dependencyDashboard": true,
+  "github-actions": {
+    "description": "The workflow templates end in .template, outside the default file patterns; their action pins stay current here.",
+    "managerFilePatterns": [
+      "/(^|/)templates/package/\\.github/workflows/[^/]+\\.yml\\.template$/"
+    ]
+  },
   "packageRules": [
     {
-      "description": "Same commit convention as the package repositories: `ci(github-actions): ...` for action bumps.",
-      "matchManagers": [
-        "github-actions"
+      "description": "In the templates the assertions-ci pin is the {{assertions-ci}} placeholder that family_sync.py fills in: never pin or update it.",
+      "matchFileNames": [
+        "templates/package/**"
       ],
-      "semanticCommitType": "ci",
-      "semanticCommitScope": "github-actions"
+      "matchPackageNames": [
+        "JohnVerheij/assertions-ci"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Renovate releases several times a day; its image (the config validator) moves once a week.",
+      "matchDepNames": [
+        "ghcr.io/renovatebot/renovate"
+      ],
+      "schedule": [
+        "before 4am on monday"
+      ]
     }
   ]
 }

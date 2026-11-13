@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import runpy
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -170,6 +172,114 @@ class MainTests(unittest.TestCase):
             finally:
                 os.chdir(cwd)
         self.assertEqual(code, 1)
+        self.assertIn("No src/*/obj/project.assets.json found", out.getvalue())
+
+
+class RepoMainTests(unittest.TestCase):
+    """Runs main() against a throwaway repository with several projects and package folders."""
+
+    def build_repo(self, projects: dict[str, dict], licenses: dict[str, str], folders: int = 1) -> str:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        package_folders = [os.path.join(tmp.name, f"packages{index}") for index in range(folders)]
+        for name, lic in licenses.items():
+            folder = os.path.join(package_folders[-1], name.lower(), "1.0.0")
+            os.makedirs(folder)
+            with open(os.path.join(folder, name.lower() + ".nuspec"), "w", encoding="utf-8") as f:
+                f.write(nuspec(lic))
+        repo = os.path.join(tmp.name, "repo")
+        for project, document in projects.items():
+            document["packageFolders"] = {folder: {} for folder in package_folders}
+            obj = os.path.join(repo, "src", project, "obj")
+            os.makedirs(obj)
+            with open(os.path.join(obj, "project.assets.json"), "w", encoding="utf-8") as f:
+                json.dump(document, f)
+        return repo
+
+    def run_gate(self, repo: str, **env: str) -> tuple[int, str]:
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(repo)
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"LICENSE_ALLOWLIST": "", **env}, clear=False), redirect_stdout(out):
+            if "GITHUB_STEP_SUMMARY" not in env:
+                os.environ.pop("GITHUB_STEP_SUMMARY", None)
+            code = gate.main()
+        return code, out.getvalue()
+
+    @staticmethod
+    def single_package_assets(name: str = "Only.Lib") -> dict:
+        return {
+            "project": {"frameworks": {"net10.0": {"dependencies": {name: {"target": "Package"}}}}},
+            "targets": {"net10.0": {f"{name}/1.0.0": {"type": "package"}}},
+            "libraries": {f"{name}/1.0.0": {"path": f"{name.lower()}/1.0.0"}},
+        }
+
+    def test_package_seen_in_two_projects_is_checked_once(self):
+        repo = self.build_repo({"First": self.single_package_assets(), "Second": self.single_package_assets()},
+                               {"Only.Lib": '<license type="expression">MIT</license>'})
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Checked 1 shipped package(s); 0 not accepted.", out)
+
+    def test_dependency_missing_from_the_targets_is_skipped(self):
+        document = self.single_package_assets()
+        document["project"]["frameworks"]["net10.0"]["dependencies"]["Ghost.Lib"] = {"target": "Package"}
+        repo = self.build_repo({"First": document}, {"Only.Lib": '<license type="expression">MIT</license>'})
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Checked 1 shipped package(s); 0 not accepted.", out)
+        self.assertNotIn("Ghost.Lib", out)
+
+    def test_package_without_a_nuspec_in_any_folder_fails(self):
+        repo = self.build_repo({"First": self.single_package_assets()}, {}, folders=2)
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL  Only.Lib  1.0.0         nuspec not found", out)
+        self.assertIn("Checked 1 shipped package(s); 1 not accepted.", out)
+
+    def test_nuspec_is_found_in_a_later_package_folder(self):
+        repo = self.build_repo({"First": self.single_package_assets()},
+                               {"Only.Lib": '<license type="expression">MIT</license>'}, folders=2)
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 0, out)
+        self.assertIn("ok    Only.Lib  1.0.0         MIT", out)
+
+    def test_license_url_only_fails_and_shows_the_url(self):
+        repo = self.build_repo({"First": self.single_package_assets()},
+                               {"Only.Lib": "<licenseUrl>https://example.org/license</licenseUrl>"})
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 1)
+        self.assertIn("::error::Only.Lib 1.0.0 has license 'url: https://example.org/license'", out)
+
+    def test_package_without_any_license_fails_and_shows_none(self):
+        repo = self.build_repo({"First": self.single_package_assets()}, {"Only.Lib": ""})
+        code, out = self.run_gate(repo)
+        self.assertEqual(code, 1)
+        self.assertIn("::error::Only.Lib 1.0.0 has license 'none'", out)
+
+    def test_step_summary_receives_a_table_of_every_package(self):
+        repo = self.build_repo({"First": self.single_package_assets()},
+                               {"Only.Lib": '<license type="expression">Apache-2.0</license>'})
+        summary = os.path.join(os.path.dirname(repo), "summary.md")
+        code, _ = self.run_gate(repo, GITHUB_STEP_SUMMARY=summary)
+        self.assertEqual(code, 1)
+        with open(summary, encoding="utf-8") as f:
+            self.assertEqual(
+                f.read(),
+                "### License gate\n\n| Package | Version | License | Verdict |\n|---|---|---|---|\n"
+                "| Only.Lib | 1.0.0 | Apache-2.0 | FAIL |\n\n1 shipped package(s) checked; 1 not accepted.\n")
+
+    def test_runs_as_a_program(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = os.getcwd()
+            self.addCleanup(os.chdir, cwd)
+            os.chdir(tmp)
+            with mock.patch.object(sys, "argv", ["license_gate.py"]), \
+                    redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as raised:
+                runpy.run_path(gate.__file__, run_name="__main__")
+            os.chdir(cwd)
+        self.assertEqual(raised.exception.code, 1)
         self.assertIn("No src/*/obj/project.assets.json found", out.getvalue())
 
 

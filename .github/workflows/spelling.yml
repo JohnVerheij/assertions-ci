@@ -1,0 +1,32 @@
+name: Spelling
+
+# typos with the family dictionary (typos/family.toml) on this repository, the same check package-lint.yml runs in
+# every package repository, so a dictionary change is proven here first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spelling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typos:
+    name: Typos
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Typos
+        uses: crate-ci/typos@276087d9a4f06398b3e04825487805e2d7375888 # v1.52.2
+        with:
+          config: typos/family.toml
