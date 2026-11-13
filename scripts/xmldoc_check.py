@@ -7,9 +7,11 @@ Reads lib/<framework>/<assembly>.xml of each package (the documentation an IDE s
 reports
 - an empty member: no documentation text or reference at all (no summary, remarks, parameters, ...) and no <inheritdoc>;
 - a summary that is a generator placeholder ("Generated extension method for ...");
-- an <inheritdoc cref="..."/> (anywhere in the member, also inside <summary>) whose target has no summary of its own,
-  followed through further inheritdoc links.
-A summary counts when it has text or a reference such as <see cref="..."/> or <see langword="null"/>. A target is
+- a member without a summary of its own whose <inheritdoc cref="..."/> links that can give it one (directly in the
+  member, or inside <summary>) all lead to no summary, followed through further links of the same kind.
+A summary counts when it has text or a reference such as <see cref="..."/> or <see langword="null"/>. A member with a
+summary of its own passes, whatever else it inherits: an <inheritdoc> inside <param> or <returns> brings only that
+element's text, so its target needs no summary. A target is
 looked up in every package given, in the inheriting member's framework when that framework has it, so an adapter member
 may inherit from the core package. A target that is a member of a type the packages document but has no entry of its
 own is reported; any other target outside the documentation (TUnit, the .NET libraries) is not checked, and neither is
@@ -75,21 +77,37 @@ def _summary_documents(member: ET.Element) -> bool:
     return summary is not None and _has_content(summary) and not PLACEHOLDER_RE.match(_text(summary))
 
 
+def _summary_sources(member: ET.Element) -> 'list[ET.Element]':
+    """The <inheritdoc> elements that can give the member its summary: directly in the member, or inside its <summary>.
+    One inside another element (a <param>, <returns>) brings only that element's text."""
+    sources = [child for child in member if child.tag == "inheritdoc"]
+    summary = member.find("summary")
+    if summary is not None:
+        sources += list(summary.iter("inheritdoc"))
+    return sources
+
+
+def _inherits_summary(sources: 'list[ET.Element]', members: Members, owned: 'set[str]', framework: str,
+                      depth: int) -> bool:
+    """Whether one of the inheritdoc links gives a summary: one without cref (a base type or interface, not checked),
+    or one whose target ends in a real summary."""
+    for source in sources:
+        cref = source.get("cref")
+        if cref is None or _target_documented(cref, members, owned, framework, depth):
+            return True
+    return False
+
+
 def _target_documented(cref: str, members: Members, owned: 'set[str]', framework: str, depth: int = 0) -> bool:
     """Whether an inheritdoc target ends in a real summary."""
     if cref not in members:
         return not (cref.startswith(MEMBER_PREFIXES) and _declaring_type(cref) in owned)
+    if depth > MAX_INHERITDOC_DEPTH:
+        return False
     entries = members[cref]
     for label, target in [entry for entry in entries if _framework(entry[0]) == framework] or entries:
-        if _summary_documents(target):
-            return True
-        inherit = target.find(".//inheritdoc")
-        if inherit is None:
-            continue
-        next_cref = inherit.get("cref")
-        if next_cref is None:
-            return True
-        if depth < MAX_INHERITDOC_DEPTH and _target_documented(next_cref, members, owned, _framework(label), depth + 1):
+        if _summary_documents(target) or _inherits_summary(_summary_sources(target), members, owned,
+                                                           _framework(label), depth + 1):
             return True
     return False
 
@@ -107,14 +125,14 @@ def doc_issues(members: Members) -> list[str]:
                 continue
             if _summary_documents(member):
                 continue
-            inherit = member.find(".//inheritdoc")
-            if inherit is None:
+            sources = _summary_sources(member)
+            if not sources:
                 if not _has_content(member):
                     issues.append(f"{label}: {name}: empty documentation (no text and no <inheritdoc>)")
                 continue
-            cref = inherit.get("cref")
-            if cref is not None and not _target_documented(cref, members, owned, _framework(label)):
-                issues.append(f"{label}: {name}: <inheritdoc cref=\"{cref}\"/> leads to no <summary>")
+            if not _inherits_summary(sources, members, owned, _framework(label), 0):
+                issues.extend(f"{label}: {name}: <inheritdoc cref=\"{source.get('cref')}\"/> leads to no <summary>"
+                              for source in sources)
     return issues
 
 

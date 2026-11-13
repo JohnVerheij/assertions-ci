@@ -3,7 +3,8 @@
 Usage: family_sync.py [--write] [<repo root>]  (default: the current directory)
 
 The templates live in templates/package/ of assertions-ci, with the repository's path; a template may end in
-.template (the workflow callers do, so no tool in assertions-ci reads them as workflows). Placeholders:
+.template, which the written file drops (the workflow callers do, so no tool in assertions-ci reads them as workflows,
+and so does docs/docfx.json, whose {{core}} line is not valid JSON). Placeholders:
 - {{Package}}: the package name without .TUnit (from src/<Package>.TUnit/), {{domain}}: its documentation domain;
 - {{assertions-ci}}: the assertions-ci pin of the repository's own ci.yml, so every caller uses the same commit;
 - a line starting with {{core}} is kept only when the repository has a core package (src/<Package>/).
@@ -13,7 +14,7 @@ repository. The assertions-ci pins are compared: every caller must use the pin o
 Without --write: lists every template file that is missing or differs, every obsolete file the family now shares from
 assertions-ci, and every required local tool missing from .config/dotnet-tools.json; exit 1 when there is any.
 With --write: writes the differing files (keeping the repository's own pins of other actions) and deletes the
-obsolete ones.
+obsolete ones, then lists the missing local tools, which it cannot add itself; exit 1 when there is any.
 """
 import difflib
 import glob
@@ -202,6 +203,12 @@ def main(argv: list[str]) -> int:
             print(f"::error::{error}")
             return 1
         print("\n".join(changed) if changed else "Nothing to write: the repository matches the family templates.")
+        tools = _tool_issues(root)
+        if tools:
+            print(f"FAIL ({len(tools)} issue(s)) left to fix by hand:")
+            for issue in tools:
+                print("  - " + issue)
+            return 1
         return 0
     issues = check(root, package)
     if issues:

@@ -89,6 +89,42 @@ class IssueTests(unittest.TestCase):
     def test_summary_passes(self):
         self.assertEqual(xc.doc_issues(_members(("M:A.F", "<summary>Does <c>F</c>.</summary>"))), [])
 
+    def test_own_summary_passes_with_a_param_inheritdoc_to_a_member_without_summary(self):
+        members = _members(("M:A.F", '<summary>Does F.</summary><param name="x"><inheritdoc cref="M:A.G"/></param>'),
+                           ("M:A.G", '<param name="x">The x.</param>'))
+        self.assertEqual(xc.doc_issues(members), [])
+
+    def test_param_inheritdoc_is_not_a_summary_source(self):
+        # Followed before the member-level link: the first inheritdoc in document order is inside <param>.
+        members = _members(("M:A.F", '<param name="x"><inheritdoc cref="M:A.G"/></param><inheritdoc cref="M:A.H"/>'),
+                           ("M:A.G", '<param name="x">The x.</param>'), ("M:A.H", "<summary>Does H.</summary>"))
+        self.assertEqual(xc.doc_issues(members), [])
+
+    def test_every_summary_source_is_tried(self):
+        members = _members(("M:A.F", '<inheritdoc cref="M:A.G"/><summary><inheritdoc cref="M:A.H"/></summary>'),
+                           ("M:A.G", '<remarks>Only remarks.</remarks>'), ("M:A.H", "<summary>Does H.</summary>"))
+        self.assertEqual(xc.doc_issues(members), [])
+
+    def test_every_failing_summary_source_is_reported(self):
+        members = _members(("M:A.F", '<inheritdoc cref="M:A.G"/><summary><inheritdoc cref="M:A.H"/></summary>'),
+                           ("M:A.G", '<remarks>Only remarks.</remarks>'), ("M:A.H", '<remarks>Only remarks.</remarks>'))
+        issues = [issue for issue in xc.doc_issues(members) if "M:A.F:" in issue]
+        self.assertEqual(issues, ['a.nupkg!lib/net10.0/A.xml: M:A.F: <inheritdoc cref="M:A.G"/> leads to no <summary>',
+                                  'a.nupkg!lib/net10.0/A.xml: M:A.F: <inheritdoc cref="M:A.H"/> leads to no <summary>'])
+
+    def test_a_target_is_followed_through_any_of_its_summary_sources(self):
+        members = _members(("M:A.F", '<inheritdoc cref="M:A.G"/>'),
+                           ("M:A.G", '<param name="x"><inheritdoc cref="M:A.X"/></param><inheritdoc cref="M:A.H"/>'),
+                           ("M:A.X", '<param name="x">The x.</param>'), ("M:A.H", "<summary>Does H.</summary>"))
+        self.assertEqual(xc.doc_issues(members), [])
+
+    def test_a_param_inheritdoc_alone_does_not_give_a_target_a_summary(self):
+        members = _members(("M:A.F", '<inheritdoc cref="M:A.G"/>'),
+                           ("M:A.G", '<param name="x"><inheritdoc cref="M:A.H"/></param>'),
+                           ("M:A.H", "<summary>Does H.</summary>"))
+        issues = [issue for issue in xc.doc_issues(members) if "M:A.F:" in issue]
+        self.assertEqual(issues, ['a.nupkg!lib/net10.0/A.xml: M:A.F: <inheritdoc cref="M:A.G"/> leads to no <summary>'])
+
     def test_placeholder_summary_flagged(self):
         issues = xc.doc_issues(_members(("M:A.F", "<summary>Generated extension method for F</summary>")))
         self.assertEqual(len(issues), 1)

@@ -5,8 +5,11 @@ rewritten, before `dotnet docfx`. Fails if any inline Markdown link to a local
 Markdown page (a target ending in '.md') does not resolve to an existing file
 inside the docs root, or escapes it. External links (http/https/mailto/...),
 bare '#anchor' links, and links to non-Markdown repo files are intentionally
-not checked, so the gate stays deterministic and offline. Exit 1 on any dead
-link."""
+not checked, so the gate stays deterministic and offline. Links shown as code
+(fenced code blocks, inline code) are not links and are not checked; indented
+code blocks are, because telling them from an indented list continuation needs
+a full Markdown parser, and a wrong guess would hide a real dead link. Exit 1
+on any dead link."""
 import glob
 import os
 import re
@@ -17,16 +20,43 @@ _LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 # Reference-style definitions: a line '[label]: destination "optional title"'.
 _REFDEF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 _EXTERNAL = ("http://", "https://", "mailto:", "tel:", "ftp://", "//")
+# The opening or closing fence of a fenced code block: three or more backticks or tildes, indented up to three spaces.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# An inline code span: a run of backticks, then the code (within one paragraph), then a run of the same length.
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL)
+
+
+def _prose(text):
+    """The text with its fenced code blocks and inline code spans blanked out. A fence closes at a fence of the same
+    character that is at least as long, or at the end of the text; line breaks are kept, so reference definitions
+    still start a line."""
+    lines = []
+    fence = None
+    for line in text.splitlines():
+        match = _FENCE.match(line)
+        if fence is None:
+            if match:
+                fence = match.group(1)
+                line = ""
+        else:
+            stripped = line.strip()
+            if match and set(stripped) == {fence[0]} and len(stripped) >= len(fence):
+                fence = None
+            line = ""
+        lines.append(line)
+    return _CODE_SPAN.sub("", "\n".join(lines))
 
 
 def _target(dest):
-    """Extract the path portion of a link destination: drop <>, a trailing
-    "title", and any #anchor / ?query."""
+    """Extract the path portion of a link destination: drop <> (an angle-bracket
+    destination may contain spaces), a trailing "title", and any #anchor /
+    ?query."""
     dest = dest.strip()
     if dest.startswith("<") and ">" in dest:
         dest = dest[1:dest.index(">")]
-    parts = dest.split()
-    dest = parts[0] if parts else ""
+    else:
+        parts = dest.split()
+        dest = parts[0] if parts else ""
     return dest.split("#", 1)[0].split("?", 1)[0]
 
 
@@ -40,12 +70,9 @@ def _escapes(root_abs, target):
 def _validate(dest, base, root_abs, name, issues):
     """Check one link destination; append an issue if it names a local Markdown
     page that is missing or escapes the docs root. Non-Markdown, external, and
-    bare-anchor destinations are skipped."""
-    dest = dest.strip()
-    if not dest or dest.startswith("#") or dest.lower().startswith(_EXTERNAL):
-        return
+    bare-anchor destinations are skipped, also inside <>."""
     frag = _target(dest)
-    if not frag.lower().endswith(".md"):
+    if not frag or frag.lower().startswith(_EXTERNAL) or not frag.lower().endswith(".md"):
         return
     target = os.path.normpath(os.path.join(base, frag))
     if _escapes(root_abs, target):
@@ -61,7 +88,7 @@ def check_docs(root):
     # would otherwise publish unchecked.
     for path in sorted(glob.glob(os.path.join(root, "**", "*.md"), recursive=True)):
         with open(path, encoding="utf-8") as f:
-            text = f.read()
+            text = _prose(f.read())
         base = os.path.dirname(os.path.abspath(path))
         name = os.path.relpath(path, root).replace(os.sep, "/")
         for m in _LINK.finditer(text):

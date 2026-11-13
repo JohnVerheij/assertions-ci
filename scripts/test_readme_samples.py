@@ -7,6 +7,7 @@ import runpy
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 import readme_samples as rs
@@ -249,6 +250,28 @@ class ProjectTests(unittest.TestCase):
         self.assertIn(f'  <ItemGroup Condition="{net11}">\n    <PackageReference Include="Lib" Version="11.0.0" />\n'
                       '    <PackageReference Include="Other" Version="2.0.0" />\n  </ItemGroup>', text)
         self.assertNotIn("ArtifactsLocalFeedExists", text)
+
+    def test_group_and_item_framework_conditions_both_apply(self):
+        net10 = "'$(TargetFramework)' == 'net10.0'"
+        not11 = "'$(TargetFramework)' != 'net11.0'"
+        self.write("tests/Demo.TUnit.SmokeTest/Demo.TUnit.SmokeTest.csproj", f'''<Project>
+  <ItemGroup Condition="{net10}"><PackageReference Include="Lib" Version="10.0.1" Condition="{not11}" /></ItemGroup>
+</Project>''')
+        csproj = os.path.join(self.root, "tests", "Demo.TUnit.SmokeTest", "Demo.TUnit.SmokeTest.csproj")
+        self.assertEqual(rs.package_references(csproj, "Demo", "1.2.3"), [(f"({net10}) and ({not11})", "Lib", "10.0.1")])
+
+    def test_entities_in_values_are_quoted_again(self):
+        self.write("tests/Demo.TUnit.SmokeTest/Demo.TUnit.SmokeTest.csproj", '''<Project>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0' and '$(X)' &lt; '2'">
+    <PackageReference Include="A&amp;B" Version="[1.0,2.0)" />
+  </ItemGroup>
+</Project>''')
+        csproj = os.path.join(self.root, "tests", "Demo.TUnit.SmokeTest", "Demo.TUnit.SmokeTest.csproj")
+        references = rs.package_references(csproj, "Demo", "1.2.3")
+        self.assertEqual(references, [("'$(TargetFramework)' == 'net10.0' and '$(X)' < '2'", "A&B", "[1.0,2.0)")])
+        group = ET.fromstring(rs.project("net10.0", references)).find("ItemGroup[@Condition]")
+        self.assertEqual(group.get("Condition"), "'$(TargetFramework)' == 'net10.0' and '$(X)' < '2'")
+        self.assertEqual(group.find("PackageReference").attrib, {"Include": "A&B", "Version": "[1.0,2.0)"})
 
     def test_project_lists_frameworks_references_and_the_prelude(self):
         text = rs.project("net10.0 net11.0", [(None, "TUnit", "1.83.0")])

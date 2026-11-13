@@ -268,6 +268,18 @@ class MainTests(_Repo):
         self.assertEqual(code, 0)
         self.assertIn("Nothing to write", out)
 
+    def test_write_lists_the_missing_tools_it_cannot_add(self):
+        tools = json.loads(json.dumps(TOOLS))
+        del tools["tools"]["docfx"]
+        _write(self.root, ".config/dotnet-tools.json", json.dumps(tools))
+        os.remove(os.path.join(self.root, "LICENSE"))
+        code, out = self.run_main("--write", self.root)
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "wrote LICENSE\nFAIL (1 issue(s)) left to fix by hand:\n"
+                              "  - .config/dotnet-tools.json: missing the local tool docfx "
+                              "(add it: dotnet tool install --local docfx)\n")
+        self.assertTrue(os.path.isfile(os.path.join(self.root, "LICENSE")))
+
     def test_write_error_exits_one(self):
         os.remove(os.path.join(self.root, ".github", "workflows", "ci.yml"))
         code, out = self.run_main("--write", self.root)

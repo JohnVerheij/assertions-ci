@@ -68,9 +68,13 @@ jobs:
           config-file: ./.assertions-ci/codeql/package-config.yml
 
       - name: Build
-        # Only the csharp row needs a build; the actions row is analyzed build-free.
+        # Only the csharp row needs a build; the actions row is analyzed build-free. CodeQL analyzes the C# this step
+        # compiles, so it builds the shipped projects only: the tests are not analyzed (codeql/package-config.yml).
         if: matrix.language == 'csharp'
-        run: dotnet build --configuration Release
+        run: |
+          for PROJECT in src/*/*.csproj; do
+            dotnet build "$PROJECT" --configuration Release
+          done
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

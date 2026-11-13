@@ -517,7 +517,7 @@ jobs:
         # Publishes the smoke consumer with Native AOT and runs the native executable, which executes the
         # smoke tests compiled ahead of time. PublishAot is passed to the restore as well, so the ILCompiler
         # packages are in the restore graph; without that, publish silently produces a managed build. One native
-        # executable per target framework.
+        # executable per target framework; a failure on one framework does not stop the others.
         env:
           SMOKE_VERSION: ${{ steps.adapter.outputs.version }}
           FRAMEWORKS: ${{ steps.frameworks.outputs.smoke }}
@@ -530,9 +530,11 @@ jobs:
             -p:SmokePackageVersion="$SMOKE_VERSION" \
             --source "$GITHUB_WORKSPACE/artifacts" \
             --source "https://api.nuget.org/v3/index.json"
-          for TFM in $FRAMEWORKS; do
-            echo "::group::Native AOT on $TFM"
-            OUT="$RUNNER_TEMP/aot/$TFM"
+          # Publishes, checks and runs the native executable of one framework; returns 1 on the first failure.
+          native_aot() {
+            local TFM="$1"
+            local OUT="$RUNNER_TEMP/aot/$TFM"
+            local EXE="$OUT/Smoke.Consumer"
             if ! dotnet publish "$SMOKE" \
               --framework "$TFM" \
               --configuration Release \
@@ -541,35 +543,38 @@ jobs:
               -p:PublishAot=true \
               -p:SmokePackageVersion="$SMOKE_VERSION" \
               --output "$OUT"; then
-              echo "::endgroup::"
               echo "::error::Native AOT publish failed on $TFM"
-              exit 1
+              return 1
             fi
-            EXE="$OUT/Smoke.Consumer"
             if [ ! -x "$EXE" ]; then
-              echo "::endgroup::"
               echo "::error::Native executable $EXE was not produced"
               ls -la "$OUT"
-              exit 1
+              return 1
             fi
             if ! file "$EXE" | grep -q 'ELF 64-bit'; then
-              echo "::endgroup::"
               echo "::error::$EXE is not a native ELF executable: $(file "$EXE")"
-              exit 1
+              return 1
             fi
             if [ -e "$OUT/Smoke.Consumer.dll" ]; then
-              echo "::endgroup::"
               echo "::error::Smoke.Consumer.dll is present, so the $TFM publish was managed, not Native AOT"
-              exit 1
+              return 1
             fi
             echo "Native executable ($TFM): $(file "$EXE")"
             if ! "$EXE"; then
-              echo "::endgroup::"
               echo "::error::The native smoke test failed on $TFM"
-              exit 1
+              return 1
             fi
+          }
+          FAILED=""
+          for TFM in $FRAMEWORKS; do
+            echo "::group::Native AOT on $TFM"
+            native_aot "$TFM" || FAILED="$FAILED $TFM"
             echo "::endgroup::"
           done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Native AOT gate failed on:$FAILED"
+            exit 1
+          fi
 
       - name: Release files
         # The exact packages that passed every gate above, with a CycloneDX 1.6 SBOM and an OpenVEX document per

@@ -49,6 +49,47 @@ class LinkCheckTests(_Base):
         self.page("index.md", "[a](#section) [b](../src/Foo.cs) [c](image.png)")
         self.assertEqual(self.check(), [])
 
+    def test_angle_bracket_external_links_ignored(self):
+        self.page("index.md", "[a](<https://example.com/guide.md>) [b](<//host/x.md>) [c](<#section>)")
+        self.assertEqual(self.check(), [])
+
+    def test_angle_bracket_local_link_may_contain_spaces(self):
+        self.page("my page.md")
+        self.page("index.md", "[ok](<my page.md>) [gone](<no page.md>)")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'no page.md'"])
+
+    def test_blank_destination_ignored(self):
+        self.page("index.md", "[empty]( )")
+        self.assertEqual(self.check(), [])
+
+    def test_links_in_fenced_code_ignored(self):
+        self.page("index.md", "```markdown\n[example](missing.md)\n```\n\n~~~~\n[x](gone.md)\n~~~\nstill code\n~~~~\n")
+        self.assertEqual(self.check(), [])
+
+    def test_link_after_a_fenced_block_checked(self):
+        self.page("index.md", "```\n[example](missing.md)\n```\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_unclosed_fence_runs_to_the_end(self):
+        self.page("index.md", "[real](dead.md)\n```\n[example](missing.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_backtick_fence_inside_a_tilde_fence_does_not_close_it(self):
+        self.page("index.md", "~~~\n```\n[example](missing.md)\n~~~\n")
+        self.assertEqual(self.check(), [])
+
+    def test_links_in_inline_code_ignored(self):
+        self.page("index.md", "Write `[example](missing.md)` or ``[x](gone.md)`` here; [real](dead.md).")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_does_not_span_paragraphs(self):
+        self.page("index.md", "A stray ` backtick.\n\n[real](dead.md) and a ` later.")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_reference_definition_in_code_ignored(self):
+        self.page("index.md", "```\n[cl]: missing.md\n```\n")
+        self.assertEqual(self.check(), [])
+
     def test_image_links_ignored(self):
         # '![alt](target)' is an image embed, not a page link.
         self.page("index.md", "![shield](missing.md)")

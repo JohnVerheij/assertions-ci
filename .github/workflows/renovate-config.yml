@@ -37,7 +37,9 @@ jobs:
           args: --strict
 
       - name: Validate the family preset and the repository template
+        # Files named on the command line count as global (self-hosted) configuration, where options such as
+        # autodiscover are valid; --no-global checks them as repository configuration, which is what they are.
         uses: docker://ghcr.io/renovatebot/renovate:44.238.0@sha256:9f3b520cdf749cf43164e7d809b37001b2f75f4a08b2a78d25a98bfb0abdd7bf
         with:
           entrypoint: renovate-config-validator
-          args: --strict renovate/family.json templates/package/.github/renovate.json
+          args: --strict --no-global renovate/family.json templates/package/.github/renovate.json

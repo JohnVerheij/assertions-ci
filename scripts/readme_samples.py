@@ -24,6 +24,7 @@ import re
 import shutil
 import sys
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import quoteattr
 
 OUTPUT = os.path.join("tests", ".readme-samples")
 PRELUDE = "ReadmeSamples.Prelude.cs"
@@ -257,30 +258,38 @@ def _framework_condition(condition: 'str | None') -> 'str | None':
     return condition if condition and "TargetFramework" in condition else None
 
 
+def _both(group_condition: 'str | None', item_condition: 'str | None') -> 'str | None':
+    """The condition of an item: its group's and its own, both when there are two."""
+    if group_condition and item_condition:
+        return f"({group_condition}) and ({item_condition})"
+    return group_condition or item_condition
+
+
 def package_references(smoke_csproj: str, package: str, version: str) -> 'list[tuple[str | None, str, str]]':
     """The smoke project's package references as (framework condition, name, version), the adapter at the packed
-    version. A condition on the target framework, on the item or its item group, is kept: the smoke project gives a
-    dependency a version per framework that way (dpfa Proj0028 puts it on the group)."""
+    version. A condition on the target framework, on the item or its item group, is kept (both, when both have one):
+    the smoke project gives a dependency a version per framework that way (dpfa Proj0028 puts it on the group)."""
     references = []
     for group in ET.parse(smoke_csproj).getroot().iter("ItemGroup"):
         group_condition = _framework_condition(group.get("Condition"))
         for item in group.findall("PackageReference"):
             name = item.get("Include", "")
-            condition = _framework_condition(item.get("Condition")) or group_condition
+            condition = _both(group_condition, _framework_condition(item.get("Condition")))
             references.append((condition, name, version if name == f"{package}.TUnit" else item.get("Version", "")))
     return references
 
 
 def _reference_groups(references: 'list[tuple[str | None, str, str]]') -> str:
-    """The item groups of the references, one per condition, in the order the conditions first appear."""
+    """The item groups of the references, one per condition, in the order the conditions first appear. The values are
+    XML-quoted again: the parser decoded entities such as &lt; in them."""
     conditions: 'list[str | None]' = []
     for condition, _, _ in references:
         if condition not in conditions:
             conditions.append(condition)
     groups = []
     for condition in conditions:
-        attribute = f' Condition="{condition}"' if condition else ""
-        items = "\n".join(f'    <PackageReference Include="{name}" Version="{version}" />'
+        attribute = f" Condition={quoteattr(condition)}" if condition else ""
+        items = "\n".join(f"    <PackageReference Include={quoteattr(name)} Version={quoteattr(version)} />"
                           for item_condition, name, version in references if item_condition == condition)
         groups.append(f"  <ItemGroup{attribute}>\n{items}\n  </ItemGroup>")
     return "\n".join(groups)

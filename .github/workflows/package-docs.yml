@@ -82,6 +82,7 @@ jobs:
           PR_URL="https://github.com/${GITHUB_REPOSITORY}/blob/main/.github/PULL_REQUEST_TEMPLATE.md"
           for f in docs/index.md docs/changelog.md docs/conventions.md docs/contributing.md docs/coc.md docs/security.md; do
             sed -i -E \
+              -e 's#\]\((\./)?README\.md#](index.md#g' \
               -e 's#\]\((\./)?CHANGELOG\.md#](changelog.md#g' \
               -e 's#\]\((\./)?CONVENTIONS\.md#](conventions.md#g' \
               -e 's#\]\((\./)?CONTRIBUTING\.md#](contributing.md#g' \

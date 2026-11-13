@@ -15,7 +15,7 @@ build stage of a release, and a composite action for the publish stage.
 | `.github/actions/package-publish/` | Composite action for the publish job of a package repository's `release.yml`: tag and checksum checks, attestations, NuGet push, GitHub release |
 | `.github/workflows/package-lint.yml` | Reusable family lint: CHANGELOG format, PackageTags, known British spellings, README facts, the shared files against the family templates, and typos with the family dictionary |
 | `.github/workflows/package-docs.yml` | Reusable documentation site: build, internal link check, docfx, GitHub Pages deployment |
-| `.github/workflows/package-codeql.yml` | Reusable CodeQL analysis (C# and the repository's workflows), with the shared configuration in `codeql/package-config.yml` |
+| `.github/workflows/package-codeql.yml` | Reusable CodeQL analysis (the C# of the shipped projects under `src/`, and the repository's workflows), with the shared configuration in `codeql/package-config.yml` |
 | `.github/workflows/package-zizmor.yml` | Reusable zizmor audit of the repository's workflows |
 | `renovate/family.json` | Shared Renovate preset of the package repositories |
 | `templates/package/` | The family templates: the files every package repository shares, with placeholders |
@@ -30,7 +30,7 @@ build stage of a release, and a composite action for the publish stage.
 | `.github/workflows/zizmor.yml` | Security audit of the workflows, including the rendered workflow templates (blocks on findings) |
 | `.github/workflows/codeql.yml` | CodeQL analysis of the workflows (`actions` language) |
 | `.github/workflows/scripts.yml` | Runs the script unit tests with coverage and fails below 90% line and branch coverage (coverage.py, hash-pinned in `scripts/requirements-ci.txt`) |
-| `.github/workflows/renovate-config.yml` | Validates the family preset, the repository template that extends it and this repository's Renovate configuration with Renovate's own validator (`--strict`) |
+| `.github/workflows/renovate-config.yml` | Validates the family preset, the repository template that extends it and this repository's Renovate configuration with Renovate's own validator (`--strict`; the preset and the template as repository configuration, `--no-global`) |
 | `.github/workflows/spelling.yml` | typos with the family dictionary on this repository, so a dictionary change is proven here first |
 | `.github/workflows/scorecard.yml` | OpenSSF Scorecard supply-chain analysis |
 | `.github/workflows/dependency-review.yml` | Blocks pull requests that introduce a vulnerable dependency |
@@ -102,9 +102,11 @@ The workflow finds everything by convention:
 Each test project's frameworks come from the project itself (`TargetFrameworks`, or `TargetFramework`), read with
 `dotnet msbuild -getProperty`. The core, adapter and snapshot suites, the smoke test and the Native AOT gate run
 once per framework, and the coverage reports of all runs are merged before the thresholds apply. The SDK comes from
-`global.json`; for every other .NET version the projects target, the workflow installs that version's SDK for its
-runtime, and `global.json` keeps selecting the pinned one. So a repository adds `net11.0` next to `net10.0` by
-changing its projects only. A test project must target `netX.Y` frameworks only.
+`global.json`, so it must support the newest framework the projects target (the .NET 11 SDK for `net11.0`; the .NET
+10 SDK fails with `NETSDK1045`). For every other .NET version the projects target, the workflow installs that
+version's SDK for its runtime, and `global.json` keeps selecting the pinned one. So once `global.json` selects the
+.NET 11 SDK, a repository adds `net11.0` next to `net10.0` by changing its projects only. A test project must target
+`netX.Y` frameworks only.
 
 When `global.json` moves to the .NET 11 SDK, pack writes `CompatibilitySuppressions.xml` without a byte order mark.
 The suppression check below compares the file byte for byte (apart from line endings), so commit the file as pack
@@ -176,7 +178,7 @@ always match the pinned version. `family_sync.py --write` writes the callers (se
 | --- | --- | --- |
 | `package-lint.yml` | `contents: read` | `scripts/family_lint.py`: the CHANGELOG format, the `<PackageTags>` order, known British spellings in the tracked text files (a word list, not a dictionary), the README facts (the TUnit minimum in every README equals the central TUnit version; the adapter README names every sibling package; the first `SECURITY.md` supported-versions row is the current `X.Y.x` line), `family_sync.py`'s template check, and typos with the family dictionary (`typos/family.toml`; a line ending in a `spellchecker:disable-line` comment is skipped) |
 | `package-docs.yml` | input `package`; `contents: read`, `pages: write`, `id-token: write` | Build, Markdown pages from the repository files, `scripts/docs_linkcheck.py`, docfx, and on pushes the GitHub Pages deployment |
-| `package-codeql.yml` | `contents: read`, `security-events: write`, `actions: read` | CodeQL for C# (built) and the workflows, `security-extended` queries, `codeql/package-config.yml` |
+| `package-codeql.yml` | `contents: read`, `security-events: write`, `actions: read` | CodeQL for C# (the shipped projects, built) and the workflows, `security-extended` queries, `codeql/package-config.yml` |
 | `package-zizmor.yml` | `contents: read`, `actions: read` | zizmor on the repository's workflows, blocking on any finding |
 
 Two workflows stay in each repository on purpose:
@@ -217,8 +219,9 @@ it has two family rules:
 `templates/package/` holds the files every package repository shares, at their path in the repository: the
 `.gitattributes` and `.gitignore`, `Directory.Build.props` and `Directory.Build.targets`, the community files, the
 docs-site files, the Renovate configuration, and the workflow callers. The callers are stored as
-`<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL) reads them as workflows;
-`family_sync.py` writes them without the suffix. This repository's own Renovate configuration adds the templates to
+`<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL) reads them as workflows, and
+`docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON; `family_sync.py` writes them
+without the suffix. This repository's own Renovate configuration adds the templates to
 its GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
 Placeholders:
 

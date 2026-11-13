@@ -29,7 +29,9 @@ Minor release. Three things:
   selecting the pinned SDK. The step is skipped when all frameworks match the pinned SDK.
 - **Reusable support workflows:** `package-lint.yml`, `package-docs.yml`, `package-codeql.yml` (with the shared
   `codeql/package-config.yml`) and `package-zizmor.yml`. They were identical in all nine package repositories; each
-  repository now keeps a thin caller. `dependency-review.yml` (a required check) and `scorecard.yml` (Scorecard's
+  repository now keeps a thin caller. CodeQL now builds only the shipped projects (`src/*/*.csproj`): for C#, it
+  analyzes what the build compiles, so the repositories' `paths-ignore` of `tests/**` never applied. The docs
+  workflow also rewrites links to `README.md` to the site's `index.md`. `dependency-review.yml` (a required check) and `scorecard.yml` (Scorecard's
   publishing rules) stay in the repositories.
 - **Shared scripts:** `scripts/family_lint.py` and `scripts/docs_linkcheck.py`, moved here from the repositories'
   copies, with their tests. `family_lint.py` now also flags known British spellings in the tracked text files (a word
@@ -43,8 +45,9 @@ Minor release. Three things:
 - **Family templates** `templates/package/` and `scripts/family_sync.py`: the files every repository shares, with
   placeholders for the package name, the documentation domain, the assertions-ci pin and core-only lines. The check
   (also run by `package-lint.yml`) reports missing, differing and obsolete files and missing local tools; `--write`
-  updates a repository and keeps its own pins of other actions. The workflow callers are stored as `.yml.template`.
-  The templates fix drift found across the repositories: the `.gitattributes` snapshot rules and spelling, the
+  updates a repository and keeps its own pins of other actions, then lists the missing local tools it cannot add.
+  The workflow callers are stored as `.yml.template`, and `docs/docfx.json` as `docfx.json.template` (its
+  core-only line is not valid JSON). The templates fix drift found across the repositories: the `.gitattributes` snapshot rules and spelling, the
   `.gitignore` entries, the unreachable `return true;` in `Directory.Build.targets` (CS0162 at pack), and docfx
   reading `filterConfig.yml` as a page. The `Directory.Build.props` template sets `LangVersion` 15.0 (C# 15, from
   the .NET 11 SDK the family builds with to target `net10.0` and `net11.0`).
@@ -71,14 +74,14 @@ Minor release. Three things:
   merged report, as before.
 - The smoke test runs on each target framework, and the Native AOT gate publishes and runs one native executable
   per target framework.
-- A suite or smoke test that fails on one framework still runs on the others; the step then fails with one error
-  that names the frameworks that failed.
+- A suite, smoke test or Native AOT gate that fails on one framework still runs on the others; the step then fails
+  with one error that names the frameworks that failed.
 - The build job's timeout is 30 minutes instead of 20, since a two-framework repository runs every suite twice.
 - This repository's Renovate configuration extends the family preset, as every package repository does, and keeps
   the action pins in the workflow templates and the pinned tool versions current.
 - This repository's own checks: actionlint and zizmor also check the workflow templates, rendered for a demo package
   (`scripts/render_templates.py`); `renovate-config.yml` validates the preset, the repository template and this
-  configuration with Renovate's validator; `spelling.yml` runs typos with the family dictionary; `scripts.yml` measures
+  configuration with Renovate's validator, all three as repository configuration; `spelling.yml` runs typos with the family dictionary; `scripts.yml` measures
   the script tests and fails below 90% line and branch coverage. Every script is at 100%.
 - The template `.gitignore` ignores `tests/.readme-samples/`, the generated sample project.
 
