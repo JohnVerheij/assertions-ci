@@ -6,10 +6,11 @@ Markdown page (a target ending in '.md') does not resolve to an existing file
 inside the docs root, or escapes it. External links (http/https/mailto/...),
 bare '#anchor' links, and links to non-Markdown repo files are intentionally
 not checked, so the gate stays deterministic and offline. Links shown as code
-(fenced code blocks, inline code) are not links and are not checked; indented
-code blocks are, because telling them from an indented list continuation needs
-a full Markdown parser, and a wrong guess would hide a real dead link. Exit 1
-on any dead link."""
+are not links and are not checked: fenced code blocks, inline code, and
+indented code blocks outside lists and footnotes. Inside a list item or a
+footnote an indented line can be a continuation paragraph, so it stays checked:
+a code block there may show as a dead link, which fails loudly, but a real link
+is never hidden. Exit 1 on any dead link."""
 import glob
 import os
 import re
@@ -24,15 +25,16 @@ _EXTERNAL = ("http://", "https://", "mailto:", "tel:", "ftp://", "//")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 # An inline code span: a run of backticks, then the code (within one paragraph), then a run of the same length.
 _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL)
+# The start of a list item ('-', '+', '*', '1.', '1)') or of a footnote definition ('[^label]:').
+_CONTAINER = re.compile(r"^ {0,3}(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)|\[\^[^\]]+\]:)")
 
 
-def _prose(text):
-    """The text with its fenced code blocks and inline code spans blanked out. A fence closes at a fence of the same
-    character that is at least as long, or at the end of the text; line breaks are kept, so reference definitions
-    still start a line."""
-    lines = []
+def _blank_fenced_blocks(lines):
+    """The lines with every fenced code block blanked out. A fence closes at a fence of the same character that is at
+    least as long, or at the end of the text."""
+    out = []
     fence = None
-    for line in text.splitlines():
+    for line in lines:
         match = _FENCE.match(line)
         if fence is None:
             if match:
@@ -43,7 +45,49 @@ def _prose(text):
             if match and set(stripped) == {fence[0]} and len(stripped) >= len(fence):
                 fence = None
             line = ""
-        lines.append(line)
+        out.append(line)
+    return out
+
+
+def _is_indented(line):
+    """Whether the line starts with four or more columns of indentation (a tab counts as four)."""
+    expanded = line.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip(" ")) >= 4
+
+
+def _blank_indented_blocks(lines):
+    """The lines with every indented code block outside lists and footnotes blanked out. Such a block starts with an
+    indented line after a blank line (or at the start of the text) and runs, blank lines included, to the next line
+    that is not indented. A list or footnote lasts until a line with no indentation follows a blank line; until then an
+    indented line may continue it, so it is kept."""
+    out = []
+    in_container = False
+    in_code = False
+    previous_blank = True
+    for line in lines:
+        blank = not line.strip()
+        if in_code and (blank or _is_indented(line)):
+            out.append("")
+            previous_blank = blank
+            continue
+        in_code = False
+        if not blank:
+            if _is_indented(line) and previous_blank and not in_container:
+                in_code = True
+                line = ""
+            elif _CONTAINER.match(line):
+                in_container = True
+            elif previous_blank and not line[:1].isspace():
+                in_container = False
+        out.append(line)
+        previous_blank = blank
+    return out
+
+
+def _prose(text):
+    """The text with its code blanked out: fenced and indented code blocks and inline code spans. Line breaks are
+    kept, so reference definitions still start a line."""
+    lines = _blank_indented_blocks(_blank_fenced_blocks(text.splitlines()))
     return _CODE_SPAN.sub("", "\n".join(lines))
 
 

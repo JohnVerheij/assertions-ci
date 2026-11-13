@@ -38,6 +38,8 @@ Minor release. Three things:
   list: the spellings the family used before, the common -ise verbs and analyse; code such as `IsCancelled` passes)
   and three README facts: the TUnit minimum in every README equals the central TUnit version, the adapter README
   names every sibling package, and the first `SECURITY.md` supported-versions row is the current version line.
+  `docs_linkcheck.py` now skips links shown as code (fenced and inline code, and indented code outside lists and
+  footnotes) and reads angle-bracket link destinations as Markdown does.
 - **Renovate preset** `renovate/family.json`: the shared configuration of the package repositories. TUnit version
   literals now also move in every README (the core READMEs were missed before), and a major update of a package of the
   .NET release line waits for approval in the Dependency Dashboard instead of opening a pull request that would move

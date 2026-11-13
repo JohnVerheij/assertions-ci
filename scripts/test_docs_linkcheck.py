@@ -90,6 +90,38 @@ class LinkCheckTests(_Base):
         self.page("index.md", "```\n[cl]: missing.md\n```\n")
         self.assertEqual(self.check(), [])
 
+    def test_indented_code_block_after_a_blank_line_ignored(self):
+        self.page("index.md", "Example:\n\n    [x](missing.md)\n\n    [y](gone.md)\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_code_block_at_the_start_and_with_a_tab_ignored(self):
+        self.page("index.md", "    [x](missing.md)\n\n\t[y](gone.md)\n")
+        self.assertEqual(self.check(), [])
+
+    def test_indented_line_continuing_a_paragraph_checked(self):
+        self.page("index.md", "Some text\n    [lazy](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_paragraph_in_a_list_item_checked(self):
+        self.page("index.md", "- item\n\n    [continued](dead.md)\n\n1. step\n\n    [next](gone.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'", "index.md: dead internal link 'gone.md'"])
+
+    def test_indented_paragraph_in_a_footnote_checked(self):
+        self.page("index.md", "[^1]: A note.\n\n    [more](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_list_lasts_through_lazy_and_indented_lines(self):
+        self.page("index.md", "- item\nlazy line\n\n  indented\n\n    [continued](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_list_ends_at_an_unindented_line_after_a_blank_line(self):
+        self.page("index.md", "- item\n\nParagraph.\n\n    [x](missing.md)\n")
+        self.assertEqual(self.check(), [])
+
+    def test_indented_code_block_ends_at_the_next_unindented_line(self):
+        self.page("index.md", "\n    [x](missing.md)\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
     def test_image_links_ignored(self):
         # '![alt](target)' is an image embed, not a page link.
         self.page("index.md", "![shield](missing.md)")

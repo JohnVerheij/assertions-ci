@@ -94,6 +94,11 @@ class IssueTests(unittest.TestCase):
                            ("M:A.G", '<param name="x">The x.</param>'))
         self.assertEqual(xc.doc_issues(members), [])
 
+    def test_returns_inheritdoc_alone_is_not_empty_documentation(self):
+        members = _members(("M:A.F", '<returns><inheritdoc cref="M:A.G"/></returns>'),
+                           ("M:A.G", "<summary>Does G.</summary><returns>The result.</returns>"))
+        self.assertEqual(xc.doc_issues(members), [])
+
     def test_param_inheritdoc_is_not_a_summary_source(self):
         # Followed before the member-level link: the first inheritdoc in document order is inside <param>.
         members = _members(("M:A.F", '<param name="x"><inheritdoc cref="M:A.G"/></param><inheritdoc cref="M:A.H"/>'),

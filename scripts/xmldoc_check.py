@@ -127,7 +127,8 @@ def doc_issues(members: Members) -> list[str]:
                 continue
             sources = _summary_sources(member)
             if not sources:
-                if not _has_content(member):
+                # An <inheritdoc> elsewhere (inside <returns>, say) still documents the member, as other text does.
+                if not _has_content(member) and member.find(".//inheritdoc") is None:
                     issues.append(f"{label}: {name}: empty documentation (no text and no <inheritdoc>)")
                 continue
             if not _inherits_summary(sources, members, owned, _framework(label), 0):
