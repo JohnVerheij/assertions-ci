@@ -67,7 +67,8 @@ Minor release. Three things:
 - **Coverage per test run:** before the merge, the job summary shows each suite's coverage per framework and
   assembly (`scripts/coverage_table.py`); report only.
 - **typos** in `package-lint.yml`, with the family dictionary `typos/family.toml` (generated files excluded, the
-  family's correct words listed). It finds no typos in the nine repositories today.
+  family's correct words listed). It finds no typos in the nine repositories today. A repository that allows only
+  selected actions must add `crate-ci/typos@*` to them (README, "Adopting 1.4.0").
 
 ### Changed
 

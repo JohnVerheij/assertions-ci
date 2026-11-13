@@ -264,8 +264,10 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
    and likewise `docs / Build docs`, `codeql / Analyze (csharp)` and `zizmor / Audit GitHub Actions workflows`. None of
    them is a required check today; a ruleset that requires one must name the new check, or every pull request waits
    for a check that never reports.
-5. Fix what typos reports. A word that is correct in the family goes into `typos/family.toml` here, for all
-   repositories.
+5. Allow the typos action: in **Settings → Actions → General**, under "Allow select actions", add `crate-ci/typos@*`.
+   A repository that allows only its own, GitHub's and Marketplace-verified actions refuses to start the lint
+   workflow otherwise (`startup_failure`: "The action crate-ci/typos@... is not allowed"). Then fix what typos
+   reports. A word that is correct in the family goes into `typos/family.toml` here, for all repositories.
 6. Build the README samples locally (the step's commands, after a pack) and fix the samples or add
    `tests/ReadmeSamples.Prelude.cs`; mark what cannot compile `no-compile`. When every sample compiles, set
    `readme-samples: enforce` in `ci.yml` and `release.yml`.
