@@ -190,14 +190,20 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(mf.Block(0, 2, "```", "", True).stop, 3)
         self.assertEqual(mf.Block(0, 2, "```", "", False).stop, 2)
 
-    def test_unclosed_is_the_last_block_when_it_runs_to_the_end(self):
+    def test_unclosed_is_a_block_that_runs_to_the_end(self):
         lines = "```\na\n```\n```\nb".split("\n")
-        self.assertEqual(mf.unclosed(mf.blocks(lines), len(lines)), mf.Block(3, 5, "```", "", False))
+        self.assertEqual(mf.unclosed(mf.blocks(lines)), mf.Block(3, 5, "```", "", False))
 
-    def test_unclosed_is_none_for_closed_blocks_items_that_end_and_no_blocks(self):
-        for text in ("```\na\n```", "- x\n  ```\n  a\nafter", "no code"):
-            lines = text.split("\n")
-            self.assertIsNone(mf.unclosed(mf.blocks(lines), len(lines)), text)
+    def test_unclosed_is_also_a_block_that_ends_with_its_container(self):
+        # The first such block counts, wherever it ends: here the item ends it, and a closed block follows.
+        lines = "- x\n  ```\n  a\nafter\n\n```\nb\n```".split("\n")
+        self.assertEqual(mf.unclosed(mf.blocks(lines)), mf.Block(1, 3, "```", "", False))
+        lines = "> ```cs\n\nprose".split("\n")
+        self.assertEqual(mf.unclosed(mf.blocks(lines)), mf.Block(0, 1, "```", "cs", False, True))
+
+    def test_unclosed_is_none_for_closed_blocks_and_no_blocks(self):
+        for text in ("```\na\n```", "- x\n  ```\n  a\n  ```\nafter", "no code"):
+            self.assertIsNone(mf.unclosed(mf.blocks(text.split("\n"))), text)
 
 
 class BlockQuoteTests(unittest.TestCase):

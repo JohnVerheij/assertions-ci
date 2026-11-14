@@ -25,16 +25,18 @@ Minor release. Two things:
   changes were recorded as `CP0015` entries: 27 in SseAssertions.TUnit, 25 in MetricsAssertions.TUnit. A pack of
   SseAssertions.TUnit with the template drops all 27 and keeps the 21 entries of real API additions.
 - **Unclosed code blocks in the docs.** `scripts/docs_linkcheck.py` reports a fenced code block that no fence closes,
-  with its line. The rest of the page would render as code, and its links went unchecked.
+  with its line. The rest of the page, or of the list item or block quote that ends it, would render as code, and its
+  links went unchecked.
 
 ### Fixed
 
 - **README samples: a fence line with text after it no longer closes a block.** `scripts/readme_samples.py` closed a
   block at any line that starts with the fence, such as "\`\`\` More text.". In CommonMark only the fence characters
   close a block, so on GitHub and nuget.org the rest of the README rendered as code while the sample still compiled
-  (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes, now fails the step
-  with the README line, with `readme-samples: report` as well as `enforce` (the script exits with 3 for it, and
-  `package-ci.yml` fails on 3 in both modes).
+  (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes (also one that its list
+  item or block quote ends, leaving the rest of that container as code), now fails the step with the README line, with
+  `readme-samples: report` as well as `enforce` (the script exits with 3 for it, and `package-ci.yml` fails on 3 in both
+  modes).
 - **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py` now
   share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from the
   content of its container: the page, a list item or a block quote. Before, `readme_samples.py` took a fence at any

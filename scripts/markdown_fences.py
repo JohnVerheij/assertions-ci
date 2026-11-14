@@ -322,7 +322,7 @@ def scan(lines: 'list[str]') -> Scan:
     return Scan(found, kinds)
 
 
-def unclosed(found: 'list[Block]', length: int) -> 'Block | None':
-    """The block that no fence closes and that runs to the end of a text of `length` lines (only the last block can),
-    or None."""
-    return found[-1] if found and not found[-1].closed and found[-1].end == length else None
+def unclosed(found: 'list[Block]') -> 'Block | None':
+    """The first block that no fence closes, or None. When it runs to the end of the text, the rest of the page renders
+    as code; when it ends with its list item or block quote, the rest of that container does."""
+    return next((block for block in found if not block.closed), None)

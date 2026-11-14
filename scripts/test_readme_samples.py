@@ -77,10 +77,22 @@ class SamplesOfTests(unittest.TestCase):
         self.assertEqual(([sample.lines for sample in samples], skipped), ([["var b = 2;"]], 0))
 
     def test_a_block_quote_ends_at_a_line_without_its_marker(self):
-        # The quoted block ends with the quote, so the fence on the third line opens a block that never closes.
+        # The quoted block ends with the quote, unclosed; the fence on the third line opens another unclosed block.
         with self.assertRaises(rs.UnclosedFence) as raised:
             rs.samples_of("README.md", "> ```csharp\nvar a = 1;\n```\n")
-        self.assertTrue(str(raised.exception).startswith("README.md:3:"))
+        self.assertTrue(str(raised.exception).startswith("README.md:1: this code block is never closed, so the rest "
+                                                         "of the list item or block quote renders as code."))
+
+    def test_a_block_that_ends_with_its_container_unclosed_fails_too(self):
+        # A quoted fence, a blank line, prose and a later closed fence: the quote leaves its block unclosed.
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "> ```csharp\n> var a = 1;\n\nProse.\n\n```csharp\nvar b = 2;\n```\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1:"))
+
+    def test_an_unclosed_block_at_the_end_names_the_rest_of_the_readme(self):
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "```csharp\nvar a = 1;\n")
+        self.assertIn("so the rest of the README renders as code", str(raised.exception))
 
     def test_a_fence_indented_four_spaces_is_indented_code_not_a_sample(self):
         samples, skipped = rs.samples_of("README.md", "Text.\n\n    ```csharp\n    var a = 1;\n    ```\n")

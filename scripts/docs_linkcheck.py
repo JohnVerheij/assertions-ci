@@ -11,9 +11,10 @@ and HTML blocks (such as a commented-out link), found as CommonMark finds them
 by markdown_fences.py, and inline code and HTML comments within a paragraph.
 Footnotes are the exception: an indented line in a footnote definition stays
 checked, as it may continue the note, so a real link is never hidden. A fenced
-code block that no fence closes is reported too: the rest of the page would
-render as code (a fence line with text after it, such as '``` More text.', does
-not close a block). Exit 1 on any issue."""
+code block that no fence closes is reported too: the rest of the page, or of
+the list item or block quote that ends it, would render as code (a fence line
+with text after it, such as '``` More text.', does not close a block). Exit 1
+on any issue."""
 import glob
 import os
 import re
@@ -169,10 +170,11 @@ def check_docs(root):
                 _validate(m.group(1), base, root_abs, name, issues)
             for m in _REFDEF.finditer(paragraph):
                 _validate(m.group(1), base, root_abs, name, issues)
-        unclosed = markdown_fences.unclosed(scan.blocks, len(lines))
+        unclosed = markdown_fences.unclosed(scan.blocks)
         if unclosed:
+            rest = "page" if unclosed.end == len(lines) else "list item or block quote"
             issues.append(f"{name}:{unclosed.start + 1}: code block never closed (a closing fence has nothing after "
-                          "it), so the rest of the page renders as code")
+                          f"it), so the rest of the {rest} renders as code")
     return issues
 
 

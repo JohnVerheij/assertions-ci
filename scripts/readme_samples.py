@@ -20,7 +20,8 @@ and one generated file per sample. `dotnet build` on the project then compiles e
 - #line directives map every part back to its README line, so a compiler error names the README line.
 
 Exit codes: 0 when the project is written, 2 for wrong arguments, and 3 when a README has a code block that no fence
-closes. The workflow fails on 3 in every mode: GitHub and nuget.org would render the rest of that README as code.
+closes. The workflow fails on 3 in every mode: GitHub and nuget.org would render the rest of that README, or of the
+list item or block quote that ends the block, as code.
 """
 import glob
 import os
@@ -204,10 +205,11 @@ def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[li
     samples, skipped = [], 0
     lines = markdown_fences.lines_of(text)
     found = markdown_fences.blocks(lines)
-    unclosed = markdown_fences.unclosed(found, len(lines))
+    unclosed = markdown_fences.unclosed(found)
     if unclosed:
-        raise UnclosedFence(f"{readme}:{unclosed.start + 1}: this code block is never closed, so the rest of the "
-                            "README renders as code. A closing fence has nothing but the fence characters on its line.")
+        rest = "README" if unclosed.end == len(lines) else "list item or block quote"
+        raise UnclosedFence(f"{readme}:{unclosed.start + 1}: this code block is never closed, so the rest of the {rest} "
+                            "renders as code. A closing fence has nothing but the fence characters on its line.")
     for block in found:
         info = block.info.split()
         if info and info[0].lower() in LANGUAGES and not block.quoted:

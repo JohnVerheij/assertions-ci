@@ -76,6 +76,11 @@ class LinkCheckTests(_Base):
                                         "index.md:2: code block never closed (a closing fence has nothing after it), "
                                         "so the rest of the page renders as code"])
 
+    def test_a_block_that_ends_with_its_list_item_unclosed_is_reported(self):
+        self.page("index.md", "- item\n  ```\n  [example](missing.md)\nafter\n")
+        self.assertEqual(self.check(), ["index.md:2: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the list item or block quote renders as code"])
+
     def test_text_after_a_fence_does_not_close_the_block(self):
         # The Metrics README case: the prose on the fence line kept the block open to the end of the page.
         self.page("index.md", "Intro.\n\n```csharp\nvar a = 1;\n``` More prose.\n\n## Next\n\n[hidden](dead.md)\n")

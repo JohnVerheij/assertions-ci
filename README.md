@@ -164,8 +164,9 @@ The conventions:
   (`> `) is no sample: a quote is an aside, such as an example of a mistake.
 - Every fenced block of a README must close (CommonMark). A closing fence has nothing but the fence characters on its
   line and is indented at most three spaces, counted from the content of its list item or block quote. A line
-  such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of the README as code.
-  The step fails on a block that no fence closes and names its README line, in both modes.
+  such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of the README as code,
+  or the rest of the list item or block quote when that ends the block. The step fails on any block that no fence
+  closes and names its README line, in both modes.
 - A sample may mix what a consumer writes in different places. Its leading `using` and preprocessor directives go
   to the top of the file, each top-level type declaration into the sample's own namespace, each member declaration (a
   line that starts with an attribute, an access modifier or `readonly`) into a class, and every other line, in order,
