@@ -101,6 +101,11 @@ class LinkCheckTests(_Base):
         self.assertEqual(self.check(), ["index.md:1: code block never closed (a closing fence has nothing after it), "
                                         "so the rest of the page renders as code"])
 
+    def test_a_paragraph_after_a_fence_on_the_marker_line_stays_in_the_item_and_checked(self):
+        # The fence's line keeps its list marker, so the indented paragraph below is not taken for indented code.
+        self.page("index.md", "- ```text\n  example\n  ```\n\n    [real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
     def test_a_fenced_block_in_a_nested_list_item_ignored(self):
         self.page("index.md", "- a\n  - b\n\n    ```\n    [example](missing.md)\n      ```\n\n[real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])

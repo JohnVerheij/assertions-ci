@@ -85,6 +85,73 @@ class ListItemTests(unittest.TestCase):
                          [(1, 2, "```", "", True), (4, 6, "```", "", False)])
 
 
+class ParagraphInterruptionTests(unittest.TestCase):
+    def test_an_ordered_item_that_does_not_start_at_one_cannot_interrupt_a_paragraph(self):
+        # '2. text' continues the paragraph, so the fence is at the page level and closes at three spaces.
+        self.assertEqual(_blocks("Paragraph\n2. text\n   ```text\ncode\n   ```"), [(2, 4, "```", "text", True)])
+
+    def test_an_ordered_item_that_starts_at_one_interrupts_a_paragraph(self):
+        self.assertEqual(_blocks("Paragraph\n1. text\n\n   ```\n   x\n      ```"), [(3, 5, "```", "", True)])
+
+    def test_a_bullet_item_interrupts_a_paragraph(self):
+        self.assertEqual(_blocks("Paragraph\n- b\n  ```\n  x\n     ```"), [(2, 4, "```", "", True)])
+
+    def test_an_empty_item_cannot_interrupt_a_paragraph(self):
+        self.assertEqual(_blocks("Paragraph\n-\n  ```\n  x\n     ```"), [(2, 5, "```", "", False)])
+
+    def test_a_sibling_item_after_paragraph_text_continues_the_list(self):
+        self.assertEqual(_blocks("1. a\n2. b\n   ```\n   x\n      ```"), [(2, 4, "```", "", True)])
+
+
+class IndentedCodeTests(unittest.TestCase):
+    def test_a_line_after_indented_code_is_no_lazy_continuation(self):
+        self.assertEqual(_blocks("- item\n\n      example\noutside\n  ```text\n  x\n     ```"),
+                         [(4, 7, "```", "text", False)])
+
+    def test_a_deeply_indented_paragraph_continuation_stays_lazy(self):
+        self.assertEqual(_blocks("- item\ntext\n        deep\nlazy\n  ```\n  x\n     ```"), [(4, 6, "```", "", True)])
+
+    def test_an_item_that_starts_with_indented_code_is_not_continued_lazily(self):
+        self.assertEqual(_blocks("-     code\noutside\n  ```\n  x\n     ```"), [(2, 5, "```", "", False)])
+
+
+class HtmlBlockTests(unittest.TestCase):
+    def test_a_fence_inside_an_html_comment_is_not_a_fence(self):
+        self.assertEqual(_blocks("<!--\n```\n-->\nafter"), [])
+
+    def test_a_comment_that_ends_on_its_line_is_over_before_the_fence(self):
+        self.assertEqual(_blocks("<!-- c -->\n```\nx\n```"), [(1, 3, "```", "", True)])
+
+    def test_blank_lines_stay_inside_a_comment(self):
+        self.assertEqual(_blocks("<!--\n\n```\n-->\n```\nx\n```"), [(4, 6, "```", "", True)])
+
+    def test_a_comment_that_never_ends_runs_to_the_end(self):
+        self.assertEqual(_blocks("<!--\n```"), [])
+
+    def test_processing_instruction_cdata_and_declaration_end_at_their_markers(self):
+        for start, end in (("<?php", "?>"), ("<![CDATA[", "]]>"), ("<!DOCTYPE html", ">")):
+            self.assertEqual(_blocks(f"{start}\n```\n{end}\n```\nx\n```"), [(3, 5, "```", "", True)], start)
+
+    def test_a_raw_element_ends_at_its_closing_tag(self):
+        self.assertEqual(_blocks("<pre>\n```\n</pre>\n```\nx\n```"), [(3, 5, "```", "", True)])
+        self.assertEqual(_blocks("<PRE>x</pre>\n```\ny\n```"), [(1, 3, "```", "", True)])
+
+    def test_a_block_tag_lasts_until_a_blank_line(self):
+        self.assertEqual(_blocks("<details>\n```csharp\nx\n```\n</details>"), [])
+        self.assertEqual(_blocks("<details>\n\n```csharp\nx\n```\n\n</details>"), [(2, 4, "```", "csharp", True)])
+
+    def test_a_complete_tag_on_its_own_line_starts_a_block_but_cannot_interrupt_a_paragraph(self):
+        self.assertEqual(_blocks("<custom-tag a=\"1\">\n```\nx\n```"), [])
+        self.assertEqual(_blocks("text\n<custom-tag>\n```\nx\n```"), [(2, 4, "```", "", True)])
+
+    def test_html_indented_four_spaces_in_a_paragraph_is_text(self):
+        self.assertEqual(_blocks("text\n    <!--\n```\nx\n```"), [(2, 4, "```", "", True)])
+
+    def test_an_html_block_in_a_list_item_ends_with_the_item(self):
+        self.assertEqual(_blocks("- <div>\n  ```\nafter\n```\nx\n```"), [(3, 5, "```", "", True)])
+        self.assertEqual(_blocks("- <!--\n  ```\nafter\n```\nx\n```"), [(3, 5, "```", "", True)])
+
+
 class BlockTests(unittest.TestCase):
     def test_stop_includes_the_closing_fence(self):
         self.assertEqual(mf.Block(0, 2, "```", "", True).stop, 3)

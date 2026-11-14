@@ -470,7 +470,9 @@ jobs:
         # scripts/readme_samples.py writes tests/.readme-samples/ from the smoke test project (its package
         # references, the packed version, implicit usings on) with #line directives back to each README line. With
         # readme-samples: enforce a failure fails the build. With report it is a warning: the first ten errors as
-        # annotations on their README lines (GitHub's limit per step), all of them in the job summary.
+        # annotations on their README lines (GitHub's limit per step), all of them in the job summary. A README code
+        # block that no fence closes fails the step in both modes (exit code 3 of the script): GitHub and nuget.org
+        # would render the rest of that README as code.
         env:
           VERSION: ${{ steps.adapter.outputs.version }}
           FRAMEWORKS: ${{ steps.frameworks.outputs.smoke }}
@@ -479,13 +481,20 @@ jobs:
           PROJECT=tests/.readme-samples/ReadmeSamples.csproj
           LOG="$RUNNER_TEMP/readme-samples.log"
           STATUS=0
-          {
-            python3 .assertions-ci/scripts/readme_samples.py "$PACKAGE" "$VERSION" "$FRAMEWORKS" &&
-            dotnet restore "$PROJECT" --force-evaluate \
-              --source "$GITHUB_WORKSPACE/artifacts" \
-              --source "https://api.nuget.org/v3/index.json" &&
-            dotnet build "$PROJECT" --configuration Release --no-restore
-          } > "$LOG" 2>&1 || STATUS=$?
+          python3 .assertions-ci/scripts/readme_samples.py "$PACKAGE" "$VERSION" "$FRAMEWORKS" > "$LOG" 2>&1 || STATUS=$?
+          if [ "$STATUS" -eq 3 ]; then
+            cat "$LOG"
+            echo "::error::A README has a code block that no fence closes (see above); GitHub and nuget.org render the rest of it as code."
+            exit 1
+          fi
+          if [ "$STATUS" -eq 0 ]; then
+            {
+              dotnet restore "$PROJECT" --force-evaluate \
+                --source "$GITHUB_WORKSPACE/artifacts" \
+                --source "https://api.nuget.org/v3/index.json" &&
+              dotnet build "$PROJECT" --configuration Release --no-restore
+            } >> "$LOG" 2>&1 || STATUS=$?
+          fi
           head -1 "$LOG"
           if [ "$STATUS" -eq 0 ]; then
             echo "Every README sample compiles."

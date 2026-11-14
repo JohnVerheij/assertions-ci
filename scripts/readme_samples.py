@@ -17,6 +17,9 @@ and one generated file per sample. `dotnet build` on the project then compiles e
 - tests/ReadmeSamples.Prelude.cs, when present, declares what samples use without declaring it themselves: types in
   namespace ReadmeSamples, and members of `public partial class Prelude` there, which every wrapping class derives from;
 - #line directives map every part back to its README line, so a compiler error names the README line.
+
+Exit codes: 0 when the project is written, 2 for wrong arguments, and 3 when a README has a code block that no fence
+closes. The workflow fails on 3 in every mode: GitHub and nuget.org would render the rest of that README as code.
 """
 import glob
 import os
@@ -32,6 +35,8 @@ OUTPUT = os.path.join("tests", ".readme-samples")
 PRELUDE = "ReadmeSamples.Prelude.cs"
 LANGUAGES = ("csharp", "cs", "c#")
 OPT_OUT = "no-compile"
+# The exit code for a README code block that no fence closes; package-ci.yml fails on it in report mode too.
+UNCLOSED_FENCE_EXIT = 3
 USING_RE = re.compile(r"^\s*(global\s+)?using\s+((static\s+)?[\w.:<>,\s]+|\w+\s*=\s*[^;]+)\s*;\s*(//.*)?$")
 TYPE_RE = re.compile(r"^((public|internal|private|protected|file|sealed|static|abstract|partial|readonly|ref|unsafe|new)"
                      r"\s+)*(class|record|struct|interface|enum|namespace|delegate)\b")
@@ -364,7 +369,7 @@ def main(argv: list[str]) -> int:
         count, skipped = write(root, package, version, frameworks)
     except UnclosedFence as error:
         print(f"FAIL {error}")
-        return 1
+        return UNCLOSED_FENCE_EXIT
     print(f"{count} README sample(s) written to {OUTPUT}; {skipped} block(s) marked {OPT_OUT}")
     return 0
 

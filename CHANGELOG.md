@@ -33,14 +33,20 @@ Minor release. Two things:
   block at any line that starts with the fence, such as "\`\`\` More text.". In CommonMark only the fence characters
   close a block, so on GitHub and nuget.org the rest of the README rendered as code while the sample still compiled
   (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes, now fails the step
-  with the README line.
+  with the README line, with `readme-samples: report` as well as `enforce` (the script exits with 3 for it, and
+  `package-ci.yml` fails on 3 in both modes).
 - **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py`
   now share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from
   the content of its container: the page, or the list item it is in. Before, `readme_samples.py` took a fence at any
   indentation (also a line of an indented code block) and closed a block at a fence indented any amount. A line that
   starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a block in a list item ends with the item.
-  A scan of the 80 Markdown files of the nine package repositories finds no block that fails the new rules, and every
-  README gives the same samples as before.
+  The scanner follows what decides where a fence can be: an ordered list item that does not start at 1, or an empty
+  item, cannot interrupt a paragraph; an indented code line is not paragraph text that a later line continues; and the
+  lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the blank line that ends
+  it) are raw HTML, so a fence there is not a fence. `docs_linkcheck.py` keeps the list marker of a fence that starts
+  on the marker line, so a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine
+  package repositories finds no block that fails the new rules, every README gives the same samples as before, and the
+  docs pages check the same text.
 
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 

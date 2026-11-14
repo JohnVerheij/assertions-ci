@@ -153,7 +153,8 @@ packages. The project takes the smoke test project's package references, with th
 per-framework conditions (a dependency with a version per target framework keeps it), and turns implicit usings on,
 as in a consumer's project. `#line` directives map every sample line back to its README, so an error
 names the README line. With `readme-samples: enforce` the build fails. With `report` it is a warning: the first
-ten errors as annotations on their README lines (GitHub shows ten per step) and all of them in the job summary.
+ten errors as annotations on their README lines (GitHub shows ten per step) and all of them in the job summary. A code
+block that no fence closes fails the step in both modes.
 The compiler reports errors inside method bodies only once every declaration compiles, so fixing samples comes in
 waves: build again after each round until the list is empty.
 

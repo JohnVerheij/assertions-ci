@@ -72,7 +72,12 @@ def _prose(lines, found):
     Line breaks are kept, so reference definitions still start a line."""
     lines = list(lines)
     for block in found:
+        # The opening line keeps what stands before its fence: a list marker ('- ```text') still opens the item, so
+        # the indented-code pass sees the list and a paragraph later in the item stays checked.
+        opening = lines[block.start]
         lines[block.start:block.stop] = [""] * (block.stop - block.start)
+        marker = opening[:opening.find(block.fence)]
+        lines[block.start] = marker if marker.strip() else ""
     return _CODE_SPAN.sub("", "\n".join(_blank_indented_blocks(lines)))
 
 

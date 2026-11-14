@@ -352,7 +352,8 @@ class ProjectTests(unittest.TestCase):
         self.write("src/Demo/README.md", "# Demo\n\n```csharp\nvar a = 1;\n``` text\n")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(rs.main(["readme_samples.py", "Demo", "1.2.3", "net10.0", self.root]), 1)
+            # A distinct code, which the workflow fails on in report mode as well as in enforce mode.
+            self.assertEqual(rs.main(["readme_samples.py", "Demo", "1.2.3", "net10.0", self.root]), 3)
         self.assertTrue(out.getvalue().startswith("FAIL src/Demo/README.md:3: this code block is never closed"))
 
     def test_main_with_wrong_arguments_prints_usage(self):
