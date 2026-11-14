@@ -200,6 +200,15 @@ class BlockTests(unittest.TestCase):
             self.assertIsNone(mf.unclosed(mf.blocks(lines), len(lines)), text)
 
 
+class ScanTests(unittest.TestCase):
+    def test_what_each_line_is(self):
+        lines = "text\nmore\n\n```\nx\n```\n<!--\nc\n-->\n    code\n- item\nlazy\n# Title".split("\n")
+        self.assertEqual(mf.scan(lines).kinds, [
+            mf.TEXT, mf.CONTINUED, mf.BLANK, mf.FENCE, mf.FENCE, mf.FENCE, mf.HTML_START, mf.HTML, mf.HTML, mf.CODE,
+            mf.TEXT, mf.CONTINUED, mf.TEXT])
+        self.assertEqual(mf.scan(lines).blocks, mf.blocks(lines))
+
+
 class WhitespaceTests(unittest.TestCase):
     """Whitespace is spaces and tabs only: a no-break space is text."""
 

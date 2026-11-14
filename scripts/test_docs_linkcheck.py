@@ -126,6 +126,40 @@ class LinkCheckTests(_Base):
         self.page("index.md", "A stray ` backtick.\n\n[real](dead.md) and a ` later.")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
+    def test_inline_code_does_not_pair_a_backtick_with_one_in_a_heading(self):
+        self.page("index.md", "A stray ` and [real](dead.md)\n# Title with a ` too\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_does_not_pair_a_backtick_with_one_in_a_list_item(self):
+        self.page("index.md", "A stray ` and [real](dead.md)\n- item with a ` too\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_escaped_backtick_opens_no_inline_code(self):
+        self.page("index.md", "An escaped \\` and [real](dead.md) and a ` later.")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_closes_only_at_a_run_of_its_own_length(self):
+        self.page("index.md", "Use ``a ` [example](missing.md)`` here; [real](dead.md).")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_over_two_lines_of_a_paragraph_ignored(self):
+        self.page("index.md", "Write `a\n[example](missing.md)` here; [real](dead.md).")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_link_in_an_html_block_is_not_checked(self):
+        # GitHub and DocFX show HTML block lines as raw HTML: a commented-out link is not a link.
+        self.page("index.md", "<!-- [old](missing.md) -->\n<div>[x](gone.md)</div>\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_markdown_after_the_blank_line_that_ends_an_html_block_is_checked(self):
+        self.page("index.md", "<details>\n<summary>More</summary>\n\n[real](dead.md)\n\n</details>\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_html_block_on_a_list_marker_line_keeps_the_item(self):
+        # The marker stays, so the indented paragraph below is taken for the item's, not for indented code.
+        self.page("index.md", "- <div>x</div>\n\n    [real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
     def test_reference_definition_in_code_ignored(self):
         self.page("index.md", "```\n[cl]: missing.md\n```\n")
         self.assertEqual(self.check(), [])

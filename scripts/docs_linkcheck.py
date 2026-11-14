@@ -6,8 +6,9 @@ Markdown page (a target ending in '.md') does not resolve to an existing file
 inside the docs root, or escapes it. External links (http/https/mailto/...),
 bare '#anchor' links, and links to non-Markdown repo files are intentionally
 not checked, so the gate stays deterministic and offline. Links shown as code
-are not links and are not checked: fenced code blocks, inline code, and
-indented code blocks outside lists and footnotes. Inside a list item or a
+or raw HTML are not links and are not checked: fenced code blocks, HTML blocks
+(such as a commented-out link), inline code (paired within one paragraph, as
+CommonMark pairs it), and indented code blocks outside lists and footnotes. Inside a list item or a
 footnote an indented line can be a continuation paragraph, so it stays checked:
 a code block there may show as a dead link, which fails loudly, but a real link
 is never hidden. A fenced code block that no fence closes is reported too: the
@@ -17,6 +18,7 @@ does not close a block). Exit 1 on any issue."""
 import glob
 import os
 import re
+import string
 import sys
 
 import markdown_fences
@@ -26,8 +28,8 @@ _LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 # Reference-style definitions: a line '[label]: destination "optional title"'.
 _REFDEF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 _EXTERNAL = ("http://", "https://", "mailto:", "tel:", "ftp://", "//")
-# An inline code span: a run of backticks, then the code (within one paragraph), then a run of the same length.
-_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.DOTALL)
+# A run of backticks, which opens or closes an inline code span.
+_BACKTICKS = re.compile(r"`+")
 # The start of a list item ('-', '+', '*', '1.', '1)') or of a footnote definition ('[^label]:').
 _CONTAINER = re.compile(r"^ {0,3}(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)|\[\^[^\]]+\]:)")
 
@@ -67,18 +69,63 @@ def _blank_indented_blocks(lines):
     return out
 
 
-def _prose(lines, found):
-    """The text with its code blanked out: the fenced code blocks `found`, indented code blocks and inline code spans.
-    Line breaks are kept, so reference definitions still start a line."""
+def _closing_run(text, start, length):
+    """The index of the first run of exactly `length` backticks from `start` on, or None."""
+    for match in _BACKTICKS.finditer(text, start):
+        if len(match.group()) == length:
+            return match.start()
+    return None
+
+
+def _without_code_spans(text):
+    """The text of one paragraph with its inline code spans removed, paired as CommonMark pairs them: a run of
+    backticks opens a span that the next run of the same length closes, a run with no such partner is text, and a
+    backslash before a punctuation character escapes it, so an escaped backtick opens nothing."""
+    out = []
+    index = 0
+    while index < len(text):
+        if text[index] == "\\" and index + 1 < len(text) and text[index + 1] in string.punctuation:
+            out.append(text[index:index + 2])
+            index += 2
+        elif text[index] == "`":
+            length = _BACKTICKS.match(text, index).end() - index
+            close = _closing_run(text, index + length, length)
+            if close is None:
+                out.append(text[index:index + length])
+                index += length
+            else:
+                index = close + length
+        else:
+            out.append(text[index])
+            index += 1
+    return "".join(out)
+
+
+def _prose(lines, scan):
+    """The prose of a page, one text per paragraph (or other block with inline content) with its inline code spans
+    removed. Fenced code blocks and HTML blocks (`scan`, from markdown_fences) and indented code blocks are left out;
+    line breaks are kept, so reference definitions still start a line."""
     lines = list(lines)
-    for block in found:
-        # The opening line keeps what stands before its fence: a list marker ('- ```text') still opens the item, so
-        # the indented-code pass sees the list and a paragraph later in the item stays checked.
-        opening = lines[block.start]
-        lines[block.start:block.stop] = [""] * (block.stop - block.start)
-        marker = opening[:opening.find(block.fence)]
-        lines[block.start] = marker if marker.strip() else ""
-    return _CODE_SPAN.sub("", "\n".join(_blank_indented_blocks(lines)))
+    openers = {block.start: block.fence for block in scan.blocks}
+    for index, kind in enumerate(scan.kinds):
+        if kind in (markdown_fences.FENCE, markdown_fences.HTML_START, markdown_fences.HTML):
+            # The first line of a block keeps what stands before it: a list marker ('- ```text') still opens the
+            # item, so the indented-code pass sees the list and a paragraph later in the item stays checked.
+            opener = openers.get(index, "<" if kind == markdown_fences.HTML_START else None)
+            marker = lines[index][:lines[index].find(opener)] if opener else ""
+            lines[index] = marker if marker.strip() else ""
+    paragraphs = []
+    joined = False
+    for line, kind in zip(_blank_indented_blocks(lines), scan.kinds):
+        if not line.strip(" \t"):
+            joined = False
+            continue
+        if joined and kind == markdown_fences.CONTINUED:
+            paragraphs[-1].append(line)
+        else:
+            paragraphs.append([line])
+        joined = True
+    return [_without_code_spans("\n".join(paragraph)) for paragraph in paragraphs]
 
 
 def _target(dest):
@@ -123,15 +170,15 @@ def check_docs(root):
     for path in sorted(glob.glob(os.path.join(root, "**", "*.md"), recursive=True)):
         with open(path, encoding="utf-8", newline="") as f:
             lines = markdown_fences.lines_of(f.read())
-        found = markdown_fences.blocks(lines)
-        text = _prose(lines, found)
+        scan = markdown_fences.scan(lines)
         base = os.path.dirname(os.path.abspath(path))
         name = os.path.relpath(path, root).replace(os.sep, "/")
-        for m in _LINK.finditer(text):
-            _validate(m.group(1), base, root_abs, name, issues)
-        for m in _REFDEF.finditer(text):
-            _validate(m.group(1), base, root_abs, name, issues)
-        unclosed = markdown_fences.unclosed(found, len(lines))
+        for paragraph in _prose(lines, scan):
+            for m in _LINK.finditer(paragraph):
+                _validate(m.group(1), base, root_abs, name, issues)
+            for m in _REFDEF.finditer(paragraph):
+                _validate(m.group(1), base, root_abs, name, issues)
+        unclosed = markdown_fences.unclosed(scan.blocks, len(lines))
         if unclosed:
             issues.append(f"{name}:{unclosed.start + 1}: code block never closed (a closing fence has nothing after "
                           "it), so the rest of the page renders as code")

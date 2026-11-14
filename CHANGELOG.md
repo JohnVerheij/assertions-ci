@@ -52,6 +52,12 @@ Minor release. Two things:
   a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine package repositories
   finds no block that fails the new rules, every README gives the same samples as before, and the docs pages check the
   same text.
+- **Docs links: inline code paired within its paragraph, HTML blocks left out.** `scripts/docs_linkcheck.py` paired
+  backticks across any lines up to a blank line, so a stray backtick could pair with one in a heading or list item below
+  it and hide every link in between, and a backslash-escaped backtick also opened inline code. It now pairs inline code
+  within one paragraph, as CommonMark does, from what `markdown_fences.scan` reports about each line. A link inside an
+  HTML block, such as a commented-out one, is raw HTML on GitHub and in DocFX, so it is no longer checked. The docs
+  pages of the nine package repositories check the same links as before.
 
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 

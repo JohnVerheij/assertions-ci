@@ -52,6 +52,16 @@ _HTML_MARKED = (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>"))
 _HTML_DECLARATION = re.compile(r"<![A-Za-z]")
 
 
+# What a line is, as scan() reports it.
+BLANK = "blank"
+FENCE = "fence"
+CODE = "code"
+HTML_START = "html start"
+HTML = "html"
+TEXT = "text"
+CONTINUED = "continued"
+
+
 class Block(NamedTuple):
     """One fenced code block. `start` is the line index of the opening fence; `end` is the index after the last content
     line: the closing fence when `closed`, otherwise the end of the text or the line that ends the list item."""
@@ -65,6 +75,15 @@ class Block(NamedTuple):
     def stop(self) -> int:
         """The index after the block, its closing fence included."""
         return self.end + 1 if self.closed else self.end
+
+
+class Scan(NamedTuple):
+    """The fenced code blocks of a text and what each of its lines is: BLANK; FENCE, a line of a fenced code block, its
+    fences included; CODE, indented code; HTML_START and HTML, the first and the further lines of an HTML block; TEXT, a
+    line that starts a paragraph, a heading or another block with inline content; or CONTINUED, a line that continues
+    the paragraph of the line before."""
+    blocks: 'list[Block]'
+    kinds: 'list[str]'
 
 
 def lines_of(text: str) -> 'list[str]':
@@ -177,13 +196,19 @@ def _block(lines: 'list[str]', start: int, opening: 'tuple[str, str]', column: i
 
 
 def blocks(lines: 'list[str]') -> 'list[Block]':
-    """Every fenced code block of the lines, in order. A less indented line right after paragraph text continues the
+    """Every fenced code block of the lines, in order (see scan)."""
+    return scan(lines).blocks
+
+
+def scan(lines: 'list[str]') -> Scan:
+    """The fenced code blocks of the lines, in order, and what each line is. A less indented line right after paragraph text continues the
     paragraph (a lazy continuation line), so it keeps the list item open; any other line indented less than an item's
     content ends the item, and so does a blank line right after an empty item. A setext heading underline ends the
     paragraph it follows; it is never a lazy continuation line. A line indented four or more spaces from its container's
     content after anything but paragraph text is indented code, which no line continues lazily. HTML blocks are skipped
     as raw HTML."""
     found: list[Block] = []
+    kinds = [BLANK] * len(lines)
     items: list[int] = []
     lazy = False
     # Whether the innermost item started on the line before and has no content yet.
@@ -209,6 +234,7 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
         offset = len(rest) - len(rest.lstrip(" "))
         if rest.strip(" ") and offset >= 4 and (started or not lazy):
             # Indented code: not a fence, not HTML, and not paragraph text that the next line could continue.
+            kinds[index] = CODE
             items = reached
             lazy = False
             index += 1
@@ -226,18 +252,22 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
         if opening:
             block = _block(lines, index, opening, column)
             found.append(block)
+            kinds[block.start:block.stop] = [FENCE] * (block.stop - block.start)
             lazy = False
             index = block.stop
             continue
         if html:
+            end = _skip_html(lines, index, html, column)
+            kinds[index:end] = [HTML_START] + [HTML] * (end - index - 1)
             lazy = False
-            index = _skip_html(lines, index, html, column)
+            index = end
             continue
         # Paragraph text, which the next line may continue lazily; a heading, a break or an empty item is not.
+        kinds[index] = CONTINUED if lazy and not started and not other_block else TEXT
         lazy = not other_block and bool(rest.strip(" "))
         empty_item = started and not rest.strip(" ")
         index += 1
-    return found
+    return Scan(found, kinds)
 
 
 def unclosed(found: 'list[Block]', length: int) -> 'Block | None':
