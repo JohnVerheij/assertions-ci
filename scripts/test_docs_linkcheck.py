@@ -205,6 +205,25 @@ class EdgeCaseTests(_Base):
         with mock.patch.object(dl.os.path, "commonpath", side_effect=ValueError("different drives")):
             self.assertTrue(dl._escapes("C:\\docs", "D:\\other\\x.md"))
 
+    def test_a_byte_order_mark_does_not_hide_a_fence_on_the_first_line(self):
+        self.page("a.md", chr(0xFEFF) + "```text\n[x](gone.md)\n```\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_form_feed_does_not_split_a_line(self):
+        # str.splitlines would end the line at the form feed and leave '  ```' as a fence that never closes.
+        self.page("a.md", "text" + chr(0x0C) + "  ```\nmore\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_line_with_only_a_no_break_space_is_not_blank(self):
+        # It is paragraph text, so the indented line after it continues the paragraph and its link is checked.
+        self.page("a.md", "text\n" + chr(0x00A0) + "\n    see [x](gone.md)\n")
+        self.assertEqual(self.check(), ["a.md: dead internal link 'gone.md'"])
+
+    def test_a_line_that_starts_with_a_no_break_space_is_not_indented(self):
+        # It ends the list, so the indented line after the next blank line is code.
+        self.page("a.md", "- item\n\n" + chr(0x00A0) + "para\n\n    code [x](gone.md)\n")
+        self.assertEqual(self.check(), [])
+
 
 class MainTests(_Base):
     def run_main(self, argv):

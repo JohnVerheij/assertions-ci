@@ -45,10 +45,13 @@ Minor release. Two things:
   heading underline ends a paragraph; an indented code line is not paragraph text that a later line continues; and the
   lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the blank line that ends
   it) are raw HTML, so a fence there is not a fence. Where the CommonMark reference implementations differ, the scanner
-  follows cmark, which GitHub renders Markdown with. `docs_linkcheck.py` keeps the list marker of a fence that starts on
-  the marker line, so a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine
-  package repositories finds no block that fails the new rules, every README gives the same samples as before, and the
-  docs pages check the same text.
+  follows cmark, which GitHub renders Markdown with. Whitespace is spaces and tabs only, so a no-break space after a
+  fence keeps it from closing a block and a line with one is not blank; lines end only at a line feed or carriage return
+  (not at a form feed or a Unicode line separator), and both scripts drop a byte order mark, which before hid a fence on
+  the first line of a docs page. `docs_linkcheck.py` keeps the list marker of a fence that starts on the marker line, so
+  a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine package repositories
+  finds no block that fails the new rules, every README gives the same samples as before, and the docs pages check the
+  same text.
 
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 

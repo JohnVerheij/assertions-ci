@@ -13,10 +13,15 @@ ordered item that does not start at 1, or an empty item, with nothing after its 
 paragraph, and an empty item ends at a blank line), setext heading underlines, indented code, and HTML blocks, whose
 lines are raw HTML (a fence inside an HTML comment, a <pre> element, or a block tag such as <details> before the
 blank line that ends it, is not a fence). Block quotes are not followed: a fence after '>' is not found. Where the
-CommonMark reference implementations differ, the scanner follows cmark, which GitHub renders Markdown with."""
+CommonMark reference implementations differ, the scanner follows cmark, which GitHub renders Markdown with.
+
+Whitespace is spaces and tabs only, as in CommonMark: a line with a no-break space is not blank, and a no-break space
+after a fence keeps it from closing a block."""
 import re
 from typing import NamedTuple
 
+# The line endings of CommonMark; str.splitlines also breaks at form feeds and Unicode line separators.
+_LINE_END = re.compile(r"\r\n|\r|\n")
 # A list item marker ('-', '+', '*', '1.', '1)') and the spaces after it, or the end of the line (an empty item).
 _MARKER = re.compile(r"([-+*]|(\d{1,9})[.)])( +|$)")
 # A thematic break ('- - -', '***'), which would otherwise read as list markers.
@@ -62,6 +67,15 @@ class Block(NamedTuple):
         return self.end + 1 if self.closed else self.end
 
 
+def lines_of(text: str) -> 'list[str]':
+    """The lines of a Markdown text as CommonMark reads them: without a leading byte order mark, and ended by a line
+    feed, a carriage return or both; a line ending at the end of the text starts no further line."""
+    lines = _LINE_END.split(text.removeprefix(chr(0xFEFF)))
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def _expand(line: str) -> 'tuple[str, int]':
     """The line with its tabs expanded to tab stops of four, and its indentation."""
     text = line.expandtabs(4)
@@ -80,7 +94,7 @@ def _open_items(text: str, items: 'list[int]', interrupts_paragraph: bool) -> in
         rest = text[position:]
         offset = len(rest) - len(rest.lstrip(" "))
         match = _MARKER.match(rest, offset) if offset <= 3 and not _BREAK.match(rest) else None
-        empty = match is not None and not rest[match.end():].strip()
+        empty = match is not None and not rest[match.end():].strip(" ")
         if match and first and interrupts_paragraph and (
                 empty or (match.group(2) is not None and int(match.group(2)) != 1)):
             match = None
@@ -99,7 +113,7 @@ def _opening(text: str, position: int) -> 'tuple[str, str] | None':
     match = _FENCE.match(rest, offset) if offset <= 3 else None
     if not match or (match.group(1)[0] == "`" and "`" in match.group(2)):
         return None
-    return match.group(1), match.group(2).strip()
+    return match.group(1), match.group(2).strip(" ")
 
 
 def _html_start(rest: str, interrupts_paragraph: bool) -> 'tuple[str, object] | None':
@@ -136,7 +150,7 @@ def _skip_html(lines: 'list[str]', start: int, end: 'tuple[str, object]', column
         return start + 1
     for index in range(start + 1, len(lines)):
         text, indent = _expand(lines[index])
-        if not text.strip():
+        if not text.strip(" "):
             if kind == "blank":
                 return index
             continue
@@ -152,7 +166,7 @@ def _block(lines: 'list[str]', start: int, opening: 'tuple[str, str]', column: i
     fence, info = opening
     for index in range(start + 1, len(lines)):
         text, indent = _expand(lines[index])
-        stripped = text.strip()
+        stripped = text.strip(" ")
         if not stripped:
             continue
         if indent < column:
@@ -177,7 +191,7 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
     index = 0
     while index < len(lines):
         text, indent = _expand(lines[index])
-        if not text.strip():
+        if not text.strip(" "):
             if empty_item:
                 items = items[:-1]
                 empty_item = False
@@ -193,7 +207,7 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
         rest = text[position:]
         started = len(reached) > depth
         offset = len(rest) - len(rest.lstrip(" "))
-        if rest.strip() and offset >= 4 and (started or not lazy):
+        if rest.strip(" ") and offset >= 4 and (started or not lazy):
             # Indented code: not a fence, not HTML, and not paragraph text that the next line could continue.
             items = reached
             lazy = False
@@ -220,8 +234,8 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
             index = _skip_html(lines, index, html, column)
             continue
         # Paragraph text, which the next line may continue lazily; a heading, a break or an empty item is not.
-        lazy = not other_block and bool(rest.strip())
-        empty_item = started and not rest.strip()
+        lazy = not other_block and bool(rest.strip(" "))
+        empty_item = started and not rest.strip(" ")
         index += 1
     return found
 

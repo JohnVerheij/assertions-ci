@@ -201,7 +201,7 @@ def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[li
     """The compiled samples of one README, and how many C# blocks opt out. Raises UnclosedFence for a block that no
     fence closes."""
     samples, skipped = [], 0
-    lines = text.removeprefix("﻿").splitlines()
+    lines = markdown_fences.lines_of(text)
     found = markdown_fences.blocks(lines)
     unclosed = markdown_fences.unclosed(found, len(lines))
     if unclosed:

@@ -4,6 +4,7 @@ import unittest
 
 import markdown_fences as mf
 
+NBSP = chr(0x00A0)
 
 def _blocks(text):
     """The blocks of the text as (start, end, fence, info, closed) tuples."""
@@ -197,6 +198,46 @@ class BlockTests(unittest.TestCase):
         for text in ("```\na\n```", "- x\n  ```\n  a\nafter", "no code"):
             lines = text.split("\n")
             self.assertIsNone(mf.unclosed(mf.blocks(lines), len(lines)), text)
+
+
+class WhitespaceTests(unittest.TestCase):
+    """Whitespace is spaces and tabs only: a no-break space is text."""
+
+    def test_a_no_break_space_after_a_closing_fence_keeps_the_block_open(self):
+        self.assertEqual(_blocks("```\nx\n```" + NBSP), [(0, 3, "```", "", False)])
+
+    def test_a_no_break_space_stays_in_the_info_string(self):
+        self.assertEqual(_blocks("```cs" + NBSP + "\nx\n```"), [(0, 2, "```", "cs" + NBSP, True)])
+
+    def test_a_line_with_only_a_no_break_space_continues_a_paragraph(self):
+        # It continues the item's paragraph lazily, so the item stays open and the fence closes in it.
+        self.assertEqual(_blocks("- item\n" + NBSP + "\ntext\n  ```\n  x\n     ```"), [(3, 5, "```", "", True)])
+
+    def test_a_line_with_only_a_no_break_space_does_not_end_an_html_block(self):
+        self.assertEqual(_blocks("<div>\n" + NBSP + "\n```\nx\n```"), [])
+
+    def test_a_line_with_only_a_no_break_space_ends_the_item_of_a_block(self):
+        self.assertEqual(_blocks("- a\n  ```\n" + NBSP + "\n  ```"),
+                         [(1, 2, "```", "", False), (3, 4, "```", "", False)])
+
+    def test_an_item_with_a_no_break_space_after_its_marker_is_not_empty(self):
+        self.assertEqual(_blocks("Paragraph\n- " + NBSP + "\n  ```\n  x\n     ```"), [(2, 4, "```", "", True)])
+
+
+class LinesOfTests(unittest.TestCase):
+    def test_a_byte_order_mark_is_dropped(self):
+        self.assertEqual(mf.lines_of(chr(0xFEFF) + "```\nx\n```\n"), ["```", "x", "```"])
+
+    def test_lines_end_at_a_line_feed_a_carriage_return_or_both(self):
+        self.assertEqual(mf.lines_of("a\r\nb\rc\nd"), ["a", "b", "c", "d"])
+
+    def test_form_feeds_and_unicode_separators_stay_in_their_line(self):
+        line = "a" + chr(0x0C) + "b" + chr(0x2028) + "c" + chr(0x85) + "d"
+        self.assertEqual(mf.lines_of(line + "\ne"), [line, "e"])
+
+    def test_a_line_ending_at_the_end_starts_no_line(self):
+        self.assertEqual(mf.lines_of(""), [])
+        self.assertEqual(mf.lines_of("a\n\n"), ["a", ""])
 
 
 if __name__ == "__main__":

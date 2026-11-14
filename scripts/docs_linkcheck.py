@@ -48,7 +48,7 @@ def _blank_indented_blocks(lines):
     in_code = False
     previous_blank = True
     for line in lines:
-        blank = not line.strip()
+        blank = not line.strip(" \t")
         if in_code and (blank or _is_indented(line)):
             out.append("")
             previous_blank = blank
@@ -60,7 +60,7 @@ def _blank_indented_blocks(lines):
                 line = ""
             elif _CONTAINER.match(line):
                 in_container = True
-            elif previous_blank and not line[:1].isspace():
+            elif previous_blank and not line.startswith((" ", "\t")):
                 in_container = False
         out.append(line)
         previous_blank = blank
@@ -121,8 +121,8 @@ def check_docs(root):
     # Recursive to match DocFX's build.content pattern (**/*.md); nested pages
     # would otherwise publish unchecked.
     for path in sorted(glob.glob(os.path.join(root, "**", "*.md"), recursive=True)):
-        with open(path, encoding="utf-8") as f:
-            lines = f.read().splitlines()
+        with open(path, encoding="utf-8", newline="") as f:
+            lines = markdown_fences.lines_of(f.read())
         found = markdown_fences.blocks(lines)
         text = _prose(lines, found)
         base = os.path.dirname(os.path.abspath(path))
