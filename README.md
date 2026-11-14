@@ -160,7 +160,7 @@ The conventions:
 - A fenced block whose info string starts with `csharp`, `cs` or `c#` is a sample. ` ```csharp no-compile ` opts a
   block out: pseudo code, a deliberately wrong example, a sample of another package.
 - Every fenced block of a README must close, and a closing fence has nothing but the fence characters on its line
-  (CommonMark). A line such as "``` More text." does not close a block: GitHub and nuget.org then render the rest of
+  (CommonMark). A line such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of
   the README as code. The step fails on a block that no fence closes and names its README line, in both modes.
 - A sample may mix what a consumer writes in different places. Its leading `using` and preprocessor directives go
   to the top of the file, each top-level type declaration into the sample's own namespace, each member declaration (a

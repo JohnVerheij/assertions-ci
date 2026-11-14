@@ -31,35 +31,43 @@ _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", 
 _CONTAINER = re.compile(r"^ {0,3}(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)|\[\^[^\]]+\]:)")
 
 
+def _indent(line):
+    """The number of leading spaces."""
+    return len(line) - len(line.lstrip(" "))
+
+
 def _opening(line):
-    """The fence that the line opens a fenced code block with, or None. A backtick fence's info string has no backtick:
-    a line such as '```x``` text' is inline code, not a block."""
+    """The fence and its indentation when the line opens a fenced code block, or None. A backtick fence's info string
+    has no backtick: a line such as '```x``` text' is inline code, not a block."""
     match = _FENCE.match(line)
     if not match or (match.group(1)[0] == "`" and "`" in line[match.end():]):
         return None
-    return match.group(1)
+    return match.group(1), _indent(line)
 
 
-def _closes(line, fence):
-    """Whether the line closes a block opened with `fence`: a fence of the same character, at least as long, with
-    nothing after it but spaces. A line such as '``` More text.' does not close the block."""
+def _closes(line, opening):
+    """Whether the line closes a block opened with `opening` (its fence and indentation): a fence of the same
+    character, at least as long, with nothing after it but spaces, and indented at most three spaces more than the
+    opening fence. CommonMark measures that indentation from the list item's content, where a fence in a list item
+    starts. A line such as '``` More text.' does not close the block."""
+    fence, indent = opening
     stripped = line.strip()
-    return bool(_FENCE.match(line)) and set(stripped) == {fence[0]} and len(stripped) >= len(fence)
+    return _indent(line) <= indent + 3 and set(stripped) == {fence[0]} and len(stripped) >= len(fence)
 
 
 def _blank_fenced_blocks(lines):
     """The lines with every fenced code block blanked out. A fence closes at a fence of the same character that is at
     least as long, or at the end of the text."""
     out = []
-    fence = None
+    opening = None
     for line in lines:
-        if fence is None:
-            fence = _opening(line)
-            if fence:
+        if opening is None:
+            opening = _opening(line)
+            if opening:
                 line = ""
         else:
-            if _closes(line, fence):
-                fence = None
+            if _closes(line, opening):
+                opening = None
             line = ""
         out.append(line)
     return out
@@ -68,13 +76,13 @@ def _blank_fenced_blocks(lines):
 def _unclosed_fence(lines):
     """The line number of an opening fence that no fence closes, or None. CommonMark runs such a block to the end of the
     page; in these docs that is always a missing or broken closing fence, and everything after it renders as code."""
-    fence = opened = None
+    opening = opened = None
     for number, line in enumerate(lines, 1):
-        if fence is None:
-            fence, opened = _opening(line), number
-        elif _closes(line, fence):
-            fence = None
-    return opened if fence else None
+        if opening is None:
+            opening, opened = _opening(line), number
+        elif _closes(line, opening):
+            opening = None
+    return opened if opening else None
 
 
 def _is_indented(line):
