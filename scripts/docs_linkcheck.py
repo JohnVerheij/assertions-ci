@@ -6,15 +6,14 @@ Markdown page (a target ending in '.md') does not resolve to an existing file
 inside the docs root, or escapes it. External links (http/https/mailto/...),
 bare '#anchor' links, and links to non-Markdown repo files are intentionally
 not checked, so the gate stays deterministic and offline. Links shown as code
-or raw HTML are not links and are not checked: fenced code blocks, HTML blocks
-(such as a commented-out link), inline code (paired within one paragraph, as
-CommonMark pairs it), and indented code blocks outside lists and footnotes. Inside a list item or a
-footnote an indented line can be a continuation paragraph, so it stays checked:
-a code block there may show as a dead link, which fails loudly, but a real link
-is never hidden. A fenced code block that no fence closes is reported too: the
-rest of the page would render as code (markdown_fences.py finds the blocks as
-CommonMark does; a fence line with text after it, such as '``` More text.',
-does not close a block). Exit 1 on any issue."""
+or raw HTML are not links and are not checked: fenced and indented code blocks
+and HTML blocks (such as a commented-out link), found as CommonMark finds them
+by markdown_fences.py, and inline code and HTML comments within a paragraph.
+Footnotes are the exception: an indented line in a footnote definition stays
+checked, as it may continue the note, so a real link is never hidden. A fenced
+code block that no fence closes is reported too: the rest of the page would
+render as code (a fence line with text after it, such as '``` More text.', does
+not close a block). Exit 1 on any issue."""
 import glob
 import os
 import re
@@ -30,41 +29,27 @@ _REFDEF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 _EXTERNAL = ("http://", "https://", "mailto:", "tel:", "ftp://", "//")
 # A run of backticks, which opens or closes an inline code span.
 _BACKTICKS = re.compile(r"`+")
-# The start of a list item ('-', '+', '*', '1.', '1)') or of a footnote definition ('[^label]:').
-_CONTAINER = re.compile(r"^ {0,3}(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)|\[\^[^\]]+\]:)")
+# The kinds of line (from markdown_fences.scan) that show code or raw HTML.
+_CODE_KINDS = (markdown_fences.FENCE, markdown_fences.HTML_START, markdown_fences.HTML)
+# The start of a footnote definition ('[^label]:'), which markdown_fences does not follow.
+_FOOTNOTE = re.compile(r" {0,3}\[\^[^\]]+\]:")
 
 
-def _is_indented(line):
-    """Whether the line starts with four or more columns of indentation (a tab counts as four)."""
-    expanded = line.expandtabs(4)
-    return len(expanded) - len(expanded.lstrip(" ")) >= 4
-
-
-def _blank_indented_blocks(lines):
-    """The lines with every indented code block outside lists and footnotes blanked out. Such a block starts with an
-    indented line after a blank line (or at the start of the text) and runs, blank lines included, to the next line
-    that is not indented. A list or footnote lasts until a line with no indentation follows a blank line; until then an
-    indented line may continue it, so it is kept."""
+def _without_code_lines(lines, kinds):
+    """The lines with fenced code, HTML blocks and indented code (`kinds`, from markdown_fences.scan) blanked out. An
+    indented line inside a footnote definition stays: markdown_fences does not follow footnotes, and there such a line
+    can continue the note after a blank line, so it is checked rather than hidden. A footnote lasts until a line with
+    no indentation follows a blank line."""
     out = []
-    in_container = False
-    in_code = False
+    in_footnote = False
     previous_blank = True
-    for line in lines:
+    for line, kind in zip(lines, kinds):
         blank = not line.strip(" \t")
-        if in_code and (blank or _is_indented(line)):
-            out.append("")
-            previous_blank = blank
-            continue
-        in_code = False
-        if not blank:
-            if _is_indented(line) and previous_blank and not in_container:
-                in_code = True
-                line = ""
-            elif _CONTAINER.match(line):
-                in_container = True
-            elif previous_blank and not line.startswith((" ", "\t")):
-                in_container = False
-        out.append(line)
+        if kind == markdown_fences.TEXT and _FOOTNOTE.match(line):
+            in_footnote = True
+        elif not blank and previous_blank and not line.startswith((" ", "\t")):
+            in_footnote = False
+        out.append("" if kind in _CODE_KINDS or (kind == markdown_fences.CODE and not in_footnote) else line)
         previous_blank = blank
     return out
 
@@ -77,14 +62,29 @@ def _closing_run(text, start, length):
     return None
 
 
-def _without_code_spans(text):
-    """The text of one paragraph with its inline code spans removed, paired as CommonMark pairs them: a run of
-    backticks opens a span that the next run of the same length closes, a run with no such partner is text, and a
-    backslash before a punctuation character escapes it, so an escaped backtick opens nothing."""
+def _comment_end(text, start):
+    """The index after the inline HTML comment that starts at `start`, or None. Only a comment that both CommonMark
+    0.29 (cmark, GitHub) and 0.31 (DocFX) accept counts: its text does not start with '>' or '->', does not end with
+    '-' and has no '--', so a link that either renderer shows is never taken for a comment."""
+    end = text.find("-->", start + 4)
+    body = text[start + 4:end]
+    if end < 0 or body.startswith((">", "->")) or body.endswith("-") or "--" in body:
+        return None
+    return end + 3
+
+
+def _without_code_spans_and_comments(text):
+    """The text of one paragraph with its inline code spans and HTML comments removed, found as CommonMark finds them,
+    from left to right: a run of backticks opens a span that the next run of the same length closes, a run with no
+    such partner is text, and a backslash before a punctuation character escapes it, so an escaped backtick opens
+    nothing."""
     out = []
     index = 0
     while index < len(text):
-        if text[index] == "\\" and index + 1 < len(text) and text[index + 1] in string.punctuation:
+        end = _comment_end(text, index) if text.startswith("<!--", index) else None
+        if end is not None:
+            index = end
+        elif text[index] == "\\" and index + 1 < len(text) and text[index + 1] in string.punctuation:
             out.append(text[index:index + 2])
             index += 2
         elif text[index] == "`":
@@ -101,22 +101,13 @@ def _without_code_spans(text):
     return "".join(out)
 
 
-def _prose(lines, scan):
-    """The prose of a page, one text per paragraph (or other block with inline content) with its inline code spans
-    removed. Fenced code blocks and HTML blocks (`scan`, from markdown_fences) and indented code blocks are left out;
-    line breaks are kept, so reference definitions still start a line."""
-    lines = list(lines)
-    openers = {block.start: block.fence for block in scan.blocks}
-    for index, kind in enumerate(scan.kinds):
-        if kind in (markdown_fences.FENCE, markdown_fences.HTML_START, markdown_fences.HTML):
-            # The first line of a block keeps what stands before it: a list marker ('- ```text') still opens the
-            # item, so the indented-code pass sees the list and a paragraph later in the item stays checked.
-            opener = openers.get(index, "<" if kind == markdown_fences.HTML_START else None)
-            marker = lines[index][:lines[index].find(opener)] if opener else ""
-            lines[index] = marker if marker.strip() else ""
+def _prose(lines, kinds):
+    """The prose of a page, one text per paragraph (or other block with inline content) with its inline code spans and
+    HTML comments removed; code and HTML blocks (`kinds`, from markdown_fences.scan) are left out. Line breaks are kept,
+    so reference definitions still start a line."""
     paragraphs = []
     joined = False
-    for line, kind in zip(_blank_indented_blocks(lines), scan.kinds):
+    for line, kind in zip(_without_code_lines(lines, kinds), kinds):
         if not line.strip(" \t"):
             joined = False
             continue
@@ -125,7 +116,7 @@ def _prose(lines, scan):
         else:
             paragraphs.append([line])
         joined = True
-    return [_without_code_spans("\n".join(paragraph)) for paragraph in paragraphs]
+    return [_without_code_spans_and_comments("\n".join(paragraph)) for paragraph in paragraphs]
 
 
 def _target(dest):
@@ -173,7 +164,7 @@ def check_docs(root):
         scan = markdown_fences.scan(lines)
         base = os.path.dirname(os.path.abspath(path))
         name = os.path.relpath(path, root).replace(os.sep, "/")
-        for paragraph in _prose(lines, scan):
+        for paragraph in _prose(lines, scan.kinds):
             for m in _LINK.finditer(paragraph):
                 _validate(m.group(1), base, root_abs, name, issues)
             for m in _REFDEF.finditer(paragraph):

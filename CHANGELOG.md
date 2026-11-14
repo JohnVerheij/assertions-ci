@@ -37,27 +37,29 @@ Minor release. Two things:
   `package-ci.yml` fails on 3 in both modes).
 - **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py` now
   share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from the
-  content of its container: the page, or the list item it is in. Before, `readme_samples.py` took a fence at any
-  indentation (also a line of an indented code block) and closed a block at a fence indented any amount. A line that
-  starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a block in a list item ends with the item.
-  The scanner follows what decides where a fence can be: an ordered list item that does not start at 1, or an empty item
-  (nothing after the marker but spaces), cannot interrupt a paragraph, and an empty item ends at a blank line; a setext
-  heading underline ends a paragraph; an indented code line is not paragraph text that a later line continues; and the
-  lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the blank line that ends
-  it) are raw HTML, so a fence there is not a fence. Where the CommonMark reference implementations differ, the scanner
-  follows cmark, which GitHub renders Markdown with. Whitespace is spaces and tabs only, so a no-break space after a
-  fence keeps it from closing a block and a line with one is not blank; lines end only at a line feed or carriage return
-  (not at a form feed or a Unicode line separator), and both scripts drop a byte order mark, which before hid a fence on
-  the first line of a docs page. `docs_linkcheck.py` keeps the list marker of a fence that starts on the marker line, so
-  a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine package repositories
+  content of its container: the page, a list item or a block quote. Before, `readme_samples.py` took a fence at any
+  indentation (also a line of an indented code block) and closed a block at a fence indented any amount, and a fence
+  after `>` was not found. A line that starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a
+  block ends with its list item or block quote. The scanner follows what decides where a fence can be: an ordered list
+  item that does not start at 1, or an empty item (nothing after the marker but spaces), cannot interrupt a paragraph,
+  and an empty item ends at a blank line; a block quote ends at a line without its `>`, unless the line continues a
+  paragraph; a setext heading underline ends a paragraph; an indented code line is not paragraph text that a later line
+  continues; and the lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the
+  blank line that ends it) are raw HTML, so a fence there is not a fence. Where the CommonMark reference implementations
+  differ, the scanner follows cmark, which GitHub renders Markdown with. Whitespace is spaces and tabs only, so a
+  no-break space after a fence keeps it from closing a block and a line with one is not blank; lines end only at a line
+  feed or carriage return (not at a form feed or a Unicode line separator), and both scripts drop a byte order mark,
+  which before hid a fence on the first line of a docs page. A sample inside a block quote is not compiled, as before: a
+  quote is an aside, such as an example of a mistake. A scan of the 80 Markdown files of the nine package repositories
   finds no block that fails the new rules, every README gives the same samples as before, and the docs pages check the
-  same text.
-- **Docs links: inline code paired within its paragraph, HTML blocks left out.** `scripts/docs_linkcheck.py` paired
+  same links.
+- **Docs links: code found as CommonMark finds it.** `scripts/docs_linkcheck.py` took an indented line for code only
+  after a blank line and outside lists, so a dead link in a list item's indented code failed the check; it paired
   backticks across any lines up to a blank line, so a stray backtick could pair with one in a heading or list item below
-  it and hide every link in between, and a backslash-escaped backtick also opened inline code. It now pairs inline code
-  within one paragraph, as CommonMark does, from what `markdown_fences.scan` reports about each line. A link inside an
-  HTML block, such as a commented-out one, is raw HTML on GitHub and in DocFX, so it is no longer checked. The docs
-  pages of the nine package repositories check the same links as before.
+  it and hide every link in between; and a backslash-escaped backtick opened inline code. It now leaves out what
+  `markdown_fences.scan` reports as code or HTML (fenced and indented code, also in list items and block quotes, and
+  HTML blocks such as a commented-out link), pairs inline code within one paragraph and drops HTML comments there. An
+  indented line in a footnote stays checked, as footnotes are not followed and the line may continue the note.
 
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 

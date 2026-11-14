@@ -71,6 +71,17 @@ class SamplesOfTests(unittest.TestCase):
             rs.samples_of("README.md", "  ```csharp\nvar a = 1;\n    ```\n\n## Next\n")
         self.assertTrue(str(raised.exception).startswith("README.md:1:"))
 
+    def test_a_block_inside_a_block_quote_is_no_sample(self):
+        text = "> ```csharp\n> var a = 1; // CS0000, a mistake\n> ```\n\n```csharp\nvar b = 2;\n```\n"
+        samples, skipped = rs.samples_of("README.md", text)
+        self.assertEqual(([sample.lines for sample in samples], skipped), ([["var b = 2;"]], 0))
+
+    def test_a_block_quote_ends_at_a_line_without_its_marker(self):
+        # The quoted block ends with the quote, so the fence on the third line opens a block that never closes.
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "> ```csharp\nvar a = 1;\n```\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:3:"))
+
     def test_a_fence_indented_four_spaces_is_indented_code_not_a_sample(self):
         samples, skipped = rs.samples_of("README.md", "Text.\n\n    ```csharp\n    var a = 1;\n    ```\n")
         self.assertEqual((samples, skipped), ([], 0))

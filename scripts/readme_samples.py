@@ -7,7 +7,8 @@ Writes tests/.readme-samples/ (not committed): ReadmeSamples.csproj with the smo
 the adapter at the packed version and implicit usings on, as in a consumer's project; the smoke test's NuGet.config;
 and one generated file per sample. `dotnet build` on the project then compiles every sample. The conventions:
 - a fenced block whose info string starts with csharp, cs or c# is a sample; `csharp no-compile` opts a block out
-  (pseudo code, a deliberately wrong example, an excerpt that cannot stand on its own);
+  (pseudo code, a deliberately wrong example, an excerpt that cannot stand on its own), and a block inside a block quote
+  is no sample (a quote is an aside, such as an example of a mistake);
 - a sample may mix what a consumer writes in different places: its leading using and preprocessor directives go to the
   top of the file, each top-level type or namespace declaration into the sample's namespace, each member declaration
   (one that starts with an attribute, an access modifier or readonly) into a class, and every other line, in order,
@@ -209,7 +210,7 @@ def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[li
                             "README renders as code. A closing fence has nothing but the fence characters on its line.")
     for block in found:
         info = block.info.split()
-        if info and info[0].lower() in LANGUAGES:
+        if info and info[0].lower() in LANGUAGES and not block.quoted:
             if OPT_OUT in info[1:]:
                 skipped += 1
             else:

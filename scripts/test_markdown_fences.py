@@ -8,7 +8,7 @@ NBSP = chr(0x00A0)
 
 def _blocks(text):
     """The blocks of the text as (start, end, fence, info, closed) tuples."""
-    return [tuple(block) for block in mf.blocks(text.split("\n"))]
+    return [tuple(block)[:5] for block in mf.blocks(text.split("\n"))]
 
 
 class TopLevelTests(unittest.TestCase):
@@ -198,6 +198,48 @@ class BlockTests(unittest.TestCase):
         for text in ("```\na\n```", "- x\n  ```\n  a\nafter", "no code"):
             lines = text.split("\n")
             self.assertIsNone(mf.unclosed(mf.blocks(lines), len(lines)), text)
+
+
+class BlockQuoteTests(unittest.TestCase):
+    def test_a_fence_in_a_block_quote_closes_in_it(self):
+        found = mf.blocks("> ```cs\n> x\n> ```\nafter".split("\n"))
+        self.assertEqual(found, [mf.Block(0, 2, "```", "cs", True, True)])
+
+    def test_a_line_without_the_marker_ends_the_quote_and_its_block(self):
+        self.assertEqual(_blocks("> ```\nx\n```"), [(0, 1, "```", "", False), (2, 3, "```", "", False)])
+
+    def test_a_blank_line_ends_the_quote_and_a_marker_alone_does_not(self):
+        self.assertEqual(_blocks("> ```\n\n```"), [(0, 1, "```", "", False), (2, 3, "```", "", False)])
+        self.assertEqual(_blocks("> ```\n>\n> ```"), [(0, 2, "```", "", True)])
+
+    def test_a_lazy_line_keeps_the_quote_open(self):
+        self.assertEqual(_blocks("> text\nlazy\n> ```\n> x\n> ```"), [(2, 4, "```", "", True)])
+
+    def test_a_block_quote_interrupts_a_paragraph(self):
+        self.assertEqual(_blocks("text\n> ```\n> x\n> ```"), [(1, 3, "```", "", True)])
+
+    def test_a_fence_after_the_quote_starts_no_html_block_inside_it(self):
+        # The quote holds a fence, so the next line, without '>', ends it; the tag line then starts an HTML block.
+        self.assertEqual(_blocks(" >```cs\n <a>\n```" + NBSP), [(0, 1, "```", "cs", False)])
+
+    def test_an_item_in_a_quote_is_measured_from_the_quote_content(self):
+        # The second line's '>' has no space after it, so the fence is one column short of the item: it opens in the
+        # quote, and the third line closes it.
+        self.assertEqual(_blocks("> - a\n   >```cs\n > ```"), [(1, 2, "```", "cs", True)])
+        self.assertEqual(_blocks("> - a\n>\n>   ```\n>   x\n>   ```"), [(2, 4, "```", "", True)])
+
+    def test_an_html_end_marker_is_looked_for_after_the_quote_markers(self):
+        # The '>' of the quote does not end the declaration; 'y>' does.
+        self.assertEqual(_blocks("> <!X\n> ```\n> y>\n> ```"), [(3, 4, "```", "", False)])
+
+
+class DefinitionTests(unittest.TestCase):
+    def test_an_underline_after_reference_definitions_only_is_paragraph_text(self):
+        # '-' is text of the paragraph that the definition started, so '<a>' continues it and the fence closes.
+        self.assertEqual(_blocks("[x]: a.md\n   -\n <a>\n```\nx\n```"), [(3, 5, "```", "", True)])
+
+    def test_an_underline_after_other_text_is_a_heading(self):
+        self.assertEqual(_blocks("[x]: a.md more\n   -\n <a>\n```\nx\n```"), [])
 
 
 class ScanTests(unittest.TestCase):

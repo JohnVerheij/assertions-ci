@@ -155,6 +155,28 @@ class LinkCheckTests(_Base):
         self.page("index.md", "<details>\n<summary>More</summary>\n\n[real](dead.md)\n\n</details>\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
+    def test_a_fenced_block_in_a_block_quote_ignored(self):
+        self.page("index.md", "> Note:\n>\n> ```text\n> [example](missing.md)\n> ```\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_code_right_after_a_heading_ignored(self):
+        self.page("index.md", "# Title\n    [x](missing.md)\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_code_in_a_list_item_ignored(self):
+        # Four spaces past the item's content is code in the item, not a paragraph.
+        self.page("index.md", "- item\n\n      [x](missing.md)\n\n  [real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_html_comment_in_a_paragraph_is_not_checked(self):
+        self.page("index.md", "Text <!-- [old](missing.md)\nstill a comment --> and [real](dead.md).\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_comment_that_cmark_does_not_accept_stays_checked(self):
+        # cmark (CommonMark 0.29) shows '<!-- a -- b -->' as text, links included, so they stay checked.
+        self.page("index.md", "Text <!-- a -- [x](dead.md) --> here.\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
     def test_an_html_block_on_a_list_marker_line_keeps_the_item(self):
         # The marker stays, so the indented paragraph below is taken for the item's, not for indented code.
         self.page("index.md", "- <div>x</div>\n\n    [real](dead.md)\n")
