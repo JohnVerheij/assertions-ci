@@ -22,6 +22,7 @@ build stage of a release, and a composite action for the publish stage.
 | `typos/family.toml` | The family dictionary for typos: excluded generated files and the words that are correct in the family |
 | `scripts/family_lint.py`, `scripts/family_sync.py`, `scripts/docs_linkcheck.py`, `scripts/render_templates.py` | The family lint, the template check and sync, the docs link check, and the template rendering for the workflow linters, with unit tests |
 | `scripts/xmldoc_check.py`, `scripts/nuget_validation_report.py`, `scripts/coverage_table.py`, `scripts/readme_samples.py` | The package checks of `package-ci.yml` (see [Package checks](#package-checks)), with unit tests |
+| `scripts/markdown_fences.py` | Finds the fenced code blocks of a Markdown file as CommonMark does, for `readme_samples.py` and `docs_linkcheck.py`, with unit tests |
 | `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
 | `scripts/dependency_snapshot.py` | Builds the dependency snapshot from the restore output, with unit tests |
@@ -159,9 +160,10 @@ waves: build again after each round until the list is empty.
 The conventions:
 - A fenced block whose info string starts with `csharp`, `cs` or `c#` is a sample. ` ```csharp no-compile ` opts a
   block out: pseudo code, a deliberately wrong example, a sample of another package.
-- Every fenced block of a README must close, and a closing fence has nothing but the fence characters on its line
-  (CommonMark). A line such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of
-  the README as code. The step fails on a block that no fence closes and names its README line, in both modes.
+- Every fenced block of a README must close (CommonMark). A closing fence has nothing but the fence characters on its
+  line and is indented at most three spaces, counted from the item's content when the block is in a list item. A line
+  such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of the README as code.
+  The step fails on a block that no fence closes and names its README line, in both modes.
 - A sample may mix what a consumer writes in different places. Its leading `using` and preprocessor directives go
   to the top of the file, each top-level type declaration into the sample's own namespace, each member declaration (a
   line that starts with an attribute, an access modifier or `readonly`) into a class, and every other line, in order,

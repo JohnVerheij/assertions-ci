@@ -33,9 +33,14 @@ Minor release. Two things:
   block at any line that starts with the fence, such as "\`\`\` More text.". In CommonMark only the fence characters
   close a block, so on GitHub and nuget.org the rest of the README rendered as code while the sample still compiled
   (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes, now fails the step
-  with the README line. Both scripts also follow CommonMark for the opening fence: a line that starts with inline code,
-  such as "\`\`\`x\`\`\` text", opens no block. A scan of the 97 Markdown files of the nine package repositories finds no
-  block that fails the new rules.
+  with the README line.
+- **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py`
+  now share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from
+  the content of its container: the page, or the list item it is in. Before, `readme_samples.py` took a fence at any
+  indentation (also a line of an indented code block) and closed a block at a fence indented any amount. A line that
+  starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a block in a list item ends with the item.
+  A scan of the 80 Markdown files of the nine package repositories finds no block that fails the new rules, and every
+  README gives the same samples as before.
 
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 

@@ -26,11 +26,12 @@ import sys
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import quoteattr
 
+import markdown_fences
+
 OUTPUT = os.path.join("tests", ".readme-samples")
 PRELUDE = "ReadmeSamples.Prelude.cs"
 LANGUAGES = ("csharp", "cs", "c#")
 OPT_OUT = "no-compile"
-FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*(.*)$")
 USING_RE = re.compile(r"^\s*(global\s+)?using\s+((static\s+)?[\w.:<>,\s]+|\w+\s*=\s*[^;]+)\s*;\s*(//.*)?$")
 TYPE_RE = re.compile(r"^((public|internal|private|protected|file|sealed|static|abstract|partial|readonly|ref|unsafe|new)"
                      r"\s+)*(class|record|struct|interface|enum|namespace|delegate)\b")
@@ -43,13 +44,6 @@ CODE = ("code",)
 
 class UnclosedFence(ValueError):
     """A fenced code block that no fence closes: GitHub and nuget.org render the rest of the README as code."""
-
-
-def _closes(line: str, fence: str) -> bool:
-    """Whether the line closes a block opened with `fence`: the same fence character, at least as many, and nothing
-    else but spaces (CommonMark). A line such as '``` More text.' does not close the block."""
-    stripped = line.strip()
-    return bool(stripped) and set(stripped) == {fence[0]} and len(stripped) >= len(fence)
 
 
 class Sample:
@@ -203,26 +197,18 @@ def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[li
     fence closes."""
     samples, skipped = [], 0
     lines = text.removeprefix("﻿").splitlines()
-    index = 0
-    while index < len(lines):
-        match = FENCE_RE.match(lines[index])
-        # A backtick fence's info string has no backtick: a line such as '```x``` text' is inline code, not a block.
-        if not match or (match.group(2)[0] == "`" and "`" in match.group(3)):
-            index += 1
-            continue
-        fence, info = match.group(2), match.group(3).split()
-        end = index + 1
-        while end < len(lines) and not _closes(lines[end], fence):
-            end += 1
-        if end == len(lines):
-            raise UnclosedFence(f"{readme}:{index + 1}: this code block is never closed, so the rest of the README "
-                                "renders as code. A closing fence has nothing but the fence characters on its line.")
+    found = markdown_fences.blocks(lines)
+    unclosed = markdown_fences.unclosed(found, len(lines))
+    if unclosed:
+        raise UnclosedFence(f"{readme}:{unclosed.start + 1}: this code block is never closed, so the rest of the "
+                            "README renders as code. A closing fence has nothing but the fence characters on its line.")
+    for block in found:
+        info = block.info.split()
         if info and info[0].lower() in LANGUAGES:
             if OPT_OUT in info[1:]:
                 skipped += 1
             else:
-                samples.append(Sample(readme, index + 2, lines[index + 1:end], source))
-        index = end + 1
+                samples.append(Sample(readme, block.start + 2, lines[block.start + 1:block.end], source))
     return samples, skipped
 
 

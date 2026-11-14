@@ -61,6 +61,20 @@ class SamplesOfTests(unittest.TestCase):
         samples, _ = rs.samples_of("README.md", text)
         self.assertEqual(samples[0].lines, ["var a = 1;", "```", "~~~~"])
 
+    def test_a_closing_fence_is_measured_from_the_list_item_content(self):
+        text = "- item\n\n  ```csharp\n  var a = 1;\n    ```\n\n```csharp\nvar b = 2;\n```\n"
+        samples, _ = rs.samples_of("README.md", text)
+        self.assertEqual([sample.lines for sample in samples], [["  var a = 1;"], ["var b = 2;"]])
+
+    def test_outside_a_list_a_closing_fence_has_at_most_three_spaces(self):
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "  ```csharp\nvar a = 1;\n    ```\n\n## Next\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1:"))
+
+    def test_a_fence_indented_four_spaces_is_indented_code_not_a_sample(self):
+        samples, skipped = rs.samples_of("README.md", "Text.\n\n    ```csharp\n    var a = 1;\n    ```\n")
+        self.assertEqual((samples, skipped), ([], 0))
+
     def test_triple_backtick_inline_code_at_a_line_start_opens_no_block(self):
         text = "```csharp``` is inline code.\n```csharp\nvar a = 1;\n```\n~~~csharp `x`\nvar b = 2;\n~~~\n"
         samples, _ = rs.samples_of("README.md", text)

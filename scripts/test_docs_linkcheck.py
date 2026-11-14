@@ -91,8 +91,18 @@ class LinkCheckTests(_Base):
         self.page("index.md", "- item\n\n  ```text\n  [example](missing.md)\n    ```\n\n[real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
-    def test_a_fence_indented_four_spaces_more_than_the_opening_does_not_close(self):
+    def test_a_fence_indented_four_spaces_does_not_close(self):
         self.page("index.md", "```\n    ```\n[example](missing.md)\n```\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_outside_a_list_a_closing_fence_has_at_most_three_spaces(self):
+        # Whatever the opening fence's indentation: CommonMark measures both from the page's left edge.
+        self.page("index.md", "  ```\n[example](missing.md)\n    ```\n[hidden](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md:1: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_a_fenced_block_in_a_nested_list_item_ignored(self):
+        self.page("index.md", "- a\n  - b\n\n    ```\n    [example](missing.md)\n      ```\n\n[real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
     def test_triple_backtick_inline_code_at_a_line_start_opens_no_block(self):
