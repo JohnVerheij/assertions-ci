@@ -41,6 +41,17 @@ FILE_SCOPED_NAMESPACE_RE = re.compile(r"^(\s*)namespace\s+([\w.]+)\s*;")
 CODE = ("code",)
 
 
+class UnclosedFence(ValueError):
+    """A fenced code block that no fence closes: GitHub and nuget.org render the rest of the README as code."""
+
+
+def _closes(line: str, fence: str) -> bool:
+    """Whether the line closes a block opened with `fence`: the same fence character, at least as many, and nothing
+    else but spaces (CommonMark). A line such as '``` More text.' does not close the block."""
+    stripped = line.strip()
+    return bool(stripped) and set(stripped) == {fence[0]} and len(stripped) >= len(fence)
+
+
 class Sample:
     """One C# block of a README: its file, the README line of its first line, and its lines. `source` is the path the
     #line directives name (absolute in the generated project, so an error points at the README itself)."""
@@ -188,19 +199,24 @@ def parts_of(sample: Sample) -> 'tuple[list[tuple[int, str]], list[Part], int | 
 
 
 def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[list[Sample], int]':
-    """The compiled samples of one README, and how many C# blocks opt out."""
+    """The compiled samples of one README, and how many C# blocks opt out. Raises UnclosedFence for a block that no
+    fence closes."""
     samples, skipped = [], 0
     lines = text.removeprefix("﻿").splitlines()
     index = 0
     while index < len(lines):
         match = FENCE_RE.match(lines[index])
-        if not match:
+        # A backtick fence's info string has no backtick: a line such as '```x``` text' is inline code, not a block.
+        if not match or (match.group(2)[0] == "`" and "`" in match.group(3)):
             index += 1
             continue
         fence, info = match.group(2), match.group(3).split()
         end = index + 1
-        while end < len(lines) and not lines[end].strip().startswith(fence):
+        while end < len(lines) and not _closes(lines[end], fence):
             end += 1
+        if end == len(lines):
+            raise UnclosedFence(f"{readme}:{index + 1}: this code block is never closed, so the rest of the README "
+                                "renders as code. A closing fence has nothing but the fence characters on its line.")
         if info and info[0].lower() in LANGUAGES:
             if OPT_OUT in info[1:]:
                 skipped += 1
@@ -358,7 +374,11 @@ def main(argv: list[str]) -> int:
         return 2
     package, version, frameworks = argv[1], argv[2], argv[3]
     root = argv[4] if len(argv) == 5 else "."
-    count, skipped = write(root, package, version, frameworks)
+    try:
+        count, skipped = write(root, package, version, frameworks)
+    except UnclosedFence as error:
+        print(f"FAIL {error}")
+        return 1
     print(f"{count} README sample(s) written to {OUTPUT}; {skipped} block(s) marked {OPT_OUT}")
     return 0
 

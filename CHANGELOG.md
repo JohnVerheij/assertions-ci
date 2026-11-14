@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14: API comparison without attribute noise, code blocks that must close
+
+Minor release. Two things:
+- Package validation no longer records changes of attributes that a consumer never compiles against, so
+  `CompatibilitySuppressions.xml` lists only real API differences. A repository adopts it with `family_sync.py --write`
+  and one regenerating pack (see the README, "Adopting 1.5.0").
+- A code block in a README or docs page that no fence closes now fails the README samples step or the docs link
+  check. Before, the rest of the page silently rendered as code.
+
+### Added
+
+- **Excluded attributes for package validation.** New template `.config/apicompat-excluded-attributes.txt`, which the
+  `Directory.Build.targets` template passes to package validation (`ApiCompatExcludeAttributesFile`):
+  `GenerateAssertionAttribute` (its expectation message) and the compiler's async, iterator and async-iterator state
+  machine attributes (their argument names a generated class whose number shifts when a method is added). Their
+  changes were recorded as `CP0015` entries: 27 in SseAssertions.TUnit, 25 in MetricsAssertions.TUnit. A pack of
+  SseAssertions.TUnit with the template drops all 27 and keeps the 21 entries of real API additions.
+- **Unclosed code blocks in the docs.** `scripts/docs_linkcheck.py` reports a fenced code block that no fence closes,
+  with its line. The rest of the page would render as code, and its links went unchecked.
+
+### Fixed
+
+- **README samples: a fence line with text after it no longer closes a block.** `scripts/readme_samples.py` closed a
+  block at any line that starts with the fence, such as "``` More text.". In CommonMark only the fence characters
+  close a block, so on GitHub and nuget.org the rest of the README rendered as code while the sample still compiled
+  (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes, now fails the step
+  with the README line. Both scripts also follow CommonMark for the opening fence: a line that starts with inline code,
+  such as "```x``` text", opens no block. A scan of the 97 Markdown files of the nine package repositories finds no
+  block that fails the new rules.
+
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 
 Minor release. Three things:
@@ -188,7 +218,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...v1.2.1

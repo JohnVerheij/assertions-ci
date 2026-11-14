@@ -10,7 +10,9 @@ are not links and are not checked: fenced code blocks, inline code, and
 indented code blocks outside lists and footnotes. Inside a list item or a
 footnote an indented line can be a continuation paragraph, so it stays checked:
 a code block there may show as a dead link, which fails loudly, but a real link
-is never hidden. Exit 1 on any dead link."""
+is never hidden. A fenced code block that no fence closes is reported too: the
+rest of the page would render as code (a fence line with text after it, such as
+'``` More text.', does not close a block). Exit 1 on any issue."""
 import glob
 import os
 import re
@@ -29,24 +31,50 @@ _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", 
 _CONTAINER = re.compile(r"^ {0,3}(?:(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)|\[\^[^\]]+\]:)")
 
 
+def _opening(line):
+    """The fence that the line opens a fenced code block with, or None. A backtick fence's info string has no backtick:
+    a line such as '```x``` text' is inline code, not a block."""
+    match = _FENCE.match(line)
+    if not match or (match.group(1)[0] == "`" and "`" in line[match.end():]):
+        return None
+    return match.group(1)
+
+
+def _closes(line, fence):
+    """Whether the line closes a block opened with `fence`: a fence of the same character, at least as long, with
+    nothing after it but spaces. A line such as '``` More text.' does not close the block."""
+    stripped = line.strip()
+    return bool(_FENCE.match(line)) and set(stripped) == {fence[0]} and len(stripped) >= len(fence)
+
+
 def _blank_fenced_blocks(lines):
     """The lines with every fenced code block blanked out. A fence closes at a fence of the same character that is at
     least as long, or at the end of the text."""
     out = []
     fence = None
     for line in lines:
-        match = _FENCE.match(line)
         if fence is None:
-            if match:
-                fence = match.group(1)
+            fence = _opening(line)
+            if fence:
                 line = ""
         else:
-            stripped = line.strip()
-            if match and set(stripped) == {fence[0]} and len(stripped) >= len(fence):
+            if _closes(line, fence):
                 fence = None
             line = ""
         out.append(line)
     return out
+
+
+def _unclosed_fence(lines):
+    """The line number of an opening fence that no fence closes, or None. CommonMark runs such a block to the end of the
+    page; in these docs that is always a missing or broken closing fence, and everything after it renders as code."""
+    fence = opened = None
+    for number, line in enumerate(lines, 1):
+        if fence is None:
+            fence, opened = _opening(line), number
+        elif _closes(line, fence):
+            fence = None
+    return opened if fence else None
 
 
 def _is_indented(line):
@@ -132,13 +160,18 @@ def check_docs(root):
     # would otherwise publish unchecked.
     for path in sorted(glob.glob(os.path.join(root, "**", "*.md"), recursive=True)):
         with open(path, encoding="utf-8") as f:
-            text = _prose(f.read())
+            raw = f.read()
+        text = _prose(raw)
         base = os.path.dirname(os.path.abspath(path))
         name = os.path.relpath(path, root).replace(os.sep, "/")
         for m in _LINK.finditer(text):
             _validate(m.group(1), base, root_abs, name, issues)
         for m in _REFDEF.finditer(text):
             _validate(m.group(1), base, root_abs, name, issues)
+        opened = _unclosed_fence(raw.splitlines())
+        if opened:
+            issues.append(f"{name}:{opened}: code block never closed (a closing fence has nothing after it), so the "
+                          "rest of the page renders as code")
     return issues
 
 
@@ -146,11 +179,11 @@ def main(argv: list[str]) -> int:
     root = argv[1] if len(argv) > 1 else "docs"
     found = check_docs(root)
     if found:
-        print(f"FAIL ({len(found)} dead link(s)):")
+        print(f"FAIL ({len(found)} issue(s)):")
         for x in found:
             print("  - " + x)
         return 1
-    print(f"OK  internal doc links resolve ({root})")
+    print(f"OK  internal doc links resolve and code blocks close ({root})")
     return 0
 
 

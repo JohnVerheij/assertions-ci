@@ -70,8 +70,24 @@ class LinkCheckTests(_Base):
         self.page("index.md", "```\n[example](missing.md)\n```\n[real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
-    def test_unclosed_fence_runs_to_the_end(self):
+    def test_unclosed_fence_is_reported_and_runs_to_the_end(self):
         self.page("index.md", "[real](dead.md)\n```\n[example](missing.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'",
+                                        "index.md:2: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_text_after_a_fence_does_not_close_the_block(self):
+        # The Metrics README case: the prose on the fence line kept the block open to the end of the page.
+        self.page("index.md", "Intro.\n\n```csharp\nvar a = 1;\n``` More prose.\n\n## Next\n\n[hidden](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md:3: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_a_closing_fence_may_be_longer_and_end_in_spaces(self):
+        self.page("index.md", "```\n[example](missing.md)\n`````  \n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_triple_backtick_inline_code_at_a_line_start_opens_no_block(self):
+        self.page("index.md", "```x``` is inline code.\n[real](dead.md)\n~~~ `fine`\ncode\n~~~\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
     def test_backtick_fence_inside_a_tilde_fence_does_not_close_it(self):
@@ -178,13 +194,14 @@ class MainTests(_Base):
         self.page("b.md")
         code, out = self.run_main(["docs_linkcheck.py", self.docs])
         self.assertEqual(code, 0)
-        self.assertIn("OK  internal doc links resolve", out)
+        self.assertIn("OK  internal doc links resolve and code blocks close", out)
 
     def test_dead_link_exits_one_and_lists_it(self):
         self.page("a.md", "[b](gone.md)")
         code, out = self.run_main(["docs_linkcheck.py", self.docs])
         self.assertEqual(code, 1)
-        self.assertIn("FAIL (1 dead link(s)):", out)
+        self.assertIn("FAIL (1 issue(s)):", out)
+        self.assertIn("  - a.md: dead internal link 'gone.md'", out)
 
     def test_default_root_is_docs(self):
         cwd = os.getcwd()
