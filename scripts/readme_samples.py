@@ -7,7 +7,8 @@ Writes tests/.readme-samples/ (not committed): ReadmeSamples.csproj with the smo
 the adapter at the packed version and implicit usings on, as in a consumer's project; the smoke test's NuGet.config;
 and one generated file per sample. `dotnet build` on the project then compiles every sample. The conventions:
 - a fenced block whose info string starts with csharp, cs or c# is a sample; `csharp no-compile` opts a block out
-  (pseudo code, a deliberately wrong example, an excerpt that cannot stand on its own);
+  (pseudo code, a deliberately wrong example, an excerpt that cannot stand on its own), and a block inside a block quote
+  is no sample (a quote is an aside, such as an example of a mistake);
 - a sample may mix what a consumer writes in different places: its leading using and preprocessor directives go to the
   top of the file, each top-level type or namespace declaration into the sample's namespace, each member declaration
   (one that starts with an attribute, an access modifier or readonly) into a class, and every other line, in order,
@@ -17,6 +18,10 @@ and one generated file per sample. `dotnet build` on the project then compiles e
 - tests/ReadmeSamples.Prelude.cs, when present, declares what samples use without declaring it themselves: types in
   namespace ReadmeSamples, and members of `public partial class Prelude` there, which every wrapping class derives from;
 - #line directives map every part back to its README line, so a compiler error names the README line.
+
+Exit codes: 0 when the project is written, 2 for wrong arguments, and 3 when a README has a code block that no fence
+closes. The workflow fails on 3 in every mode: GitHub and nuget.org would render the rest of that README, or of the
+list item or block quote that ends the block, as code.
 """
 import glob
 import os
@@ -26,11 +31,14 @@ import sys
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import quoteattr
 
+import markdown_fences
+
 OUTPUT = os.path.join("tests", ".readme-samples")
 PRELUDE = "ReadmeSamples.Prelude.cs"
 LANGUAGES = ("csharp", "cs", "c#")
 OPT_OUT = "no-compile"
-FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*(.*)$")
+# The exit code for a README code block that no fence closes; package-ci.yml fails on it in report mode too.
+UNCLOSED_FENCE_EXIT = 3
 USING_RE = re.compile(r"^\s*(global\s+)?using\s+((static\s+)?[\w.:<>,\s]+|\w+\s*=\s*[^;]+)\s*;\s*(//.*)?$")
 TYPE_RE = re.compile(r"^((public|internal|private|protected|file|sealed|static|abstract|partial|readonly|ref|unsafe|new)"
                      r"\s+)*(class|record|struct|interface|enum|namespace|delegate)\b")
@@ -39,6 +47,10 @@ MEMBER_RE = re.compile(r"^(public|private|protected|internal|static\s+readonly|r
 ASSEMBLY_ATTRIBUTE_RE = re.compile(r"^\[\s*(assembly|module)\s*:")
 FILE_SCOPED_NAMESPACE_RE = re.compile(r"^(\s*)namespace\s+([\w.]+)\s*;")
 CODE = ("code",)
+
+
+class UnclosedFence(ValueError):
+    """A fenced code block that no fence closes: GitHub and nuget.org render the rest of the README as code."""
 
 
 class Sample:
@@ -188,25 +200,23 @@ def parts_of(sample: Sample) -> 'tuple[list[tuple[int, str]], list[Part], int | 
 
 
 def samples_of(readme: str, text: str, source: 'str | None' = None) -> 'tuple[list[Sample], int]':
-    """The compiled samples of one README, and how many C# blocks opt out."""
+    """The compiled samples of one README, and how many C# blocks opt out. Raises UnclosedFence for a block that no
+    fence closes."""
     samples, skipped = [], 0
-    lines = text.removeprefix("﻿").splitlines()
-    index = 0
-    while index < len(lines):
-        match = FENCE_RE.match(lines[index])
-        if not match:
-            index += 1
-            continue
-        fence, info = match.group(2), match.group(3).split()
-        end = index + 1
-        while end < len(lines) and not lines[end].strip().startswith(fence):
-            end += 1
-        if info and info[0].lower() in LANGUAGES:
+    lines = markdown_fences.lines_of(text)
+    found = markdown_fences.blocks(lines)
+    unclosed = markdown_fences.unclosed(found)
+    if unclosed:
+        rest = "README" if unclosed.end == len(lines) else "list item or block quote"
+        raise UnclosedFence(f"{readme}:{unclosed.start + 1}: this code block is never closed, so the rest of the {rest} "
+                            "renders as code. A closing fence has nothing but the fence characters on its line.")
+    for block in found:
+        info = block.info.split()
+        if info and info[0].lower() in LANGUAGES and not block.quoted:
             if OPT_OUT in info[1:]:
                 skipped += 1
             else:
-                samples.append(Sample(readme, index + 2, lines[index + 1:end], source))
-        index = end + 1
+                samples.append(Sample(readme, block.start + 2, lines[block.start + 1:block.end], source))
     return samples, skipped
 
 
@@ -358,7 +368,11 @@ def main(argv: list[str]) -> int:
         return 2
     package, version, frameworks = argv[1], argv[2], argv[3]
     root = argv[4] if len(argv) == 5 else "."
-    count, skipped = write(root, package, version, frameworks)
+    try:
+        count, skipped = write(root, package, version, frameworks)
+    except UnclosedFence as error:
+        print(f"FAIL {error}")
+        return UNCLOSED_FENCE_EXIT
     print(f"{count} README sample(s) written to {OUTPUT}; {skipped} block(s) marked {OPT_OUT}")
     return 0
 

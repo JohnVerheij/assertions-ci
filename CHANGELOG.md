@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14: API comparison without attribute noise, code blocks that must close
+
+Minor release. Two things:
+- Package validation no longer records changes of attributes that a consumer never compiles against, so
+  `CompatibilitySuppressions.xml` lists only real API differences. A repository adopts it with `family_sync.py --write`
+  and one regenerating pack (see the README, "Adopting 1.5.0").
+- A code block in a README or docs page that no fence closes now fails the README samples step or the docs link
+  check. Before, the rest of the page silently rendered as code.
+
+### Added
+
+- **Excluded attributes for package validation.** New template `.config/apicompat-excluded-attributes.txt`, which the
+  `Directory.Build.targets` template passes to package validation (`ApiCompatExcludeAttributesFile`):
+  `GenerateAssertionAttribute` (its expectation message) and the compiler's async, iterator and async-iterator state
+  machine attributes (their argument names a generated class whose number shifts when a method is added). Their
+  changes were recorded as `CP0015` entries: 27 in SseAssertions.TUnit, 25 in MetricsAssertions.TUnit. A pack of
+  SseAssertions.TUnit with the template drops all 27 and keeps the 21 entries of real API additions.
+- **Unclosed code blocks in the docs.** `scripts/docs_linkcheck.py` reports a fenced code block that no fence closes,
+  with its line. The rest of the page, or of the list item or block quote that ends it, would render as code, and its
+  links went unchecked.
+
+### Fixed
+
+- **README samples: a fence line with text after it no longer closes a block.** `scripts/readme_samples.py` closed a
+  block at any line that starts with the fence, such as "\`\`\` More text.". In CommonMark only the fence characters
+  close a block, so on GitHub and nuget.org the rest of the README rendered as code while the sample still compiled
+  (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes (also one that its list
+  item or block quote ends, leaving the rest of that container as code), now fails the step with the README line, with
+  `readme-samples: report` as well as `enforce` (the script exits with 3 for it, and `package-ci.yml` fails on 3 in both
+  modes).
+- **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py` now
+  share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from the
+  content of its container: the page, a list item or a block quote. Before, `readme_samples.py` took a fence at any
+  indentation (also a line of an indented code block) and closed a block at a fence indented any amount, and a fence
+  after `>` was not found. A line that starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a
+  block ends with its list item or block quote. The scanner follows what decides where a fence can be: an ordered list
+  item that does not start at 1, or an empty item (nothing after the marker but spaces), cannot interrupt a paragraph,
+  and an empty item ends at a blank line; a block quote ends at a line without its `>`, unless the line continues a
+  paragraph; a setext heading underline ends a paragraph; an indented code line is not paragraph text that a later line
+  continues; and the lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the
+  blank line that ends it) are raw HTML, so a fence there is not a fence. Where the CommonMark reference implementations
+  differ, the scanner follows cmark, which GitHub renders Markdown with. Whitespace is spaces and tabs only, so a
+  no-break space after a fence keeps it from closing a block and a line with one is not blank; lines end only at a line
+  feed or carriage return (not at a form feed or a Unicode line separator), and both scripts drop a byte order mark,
+  which before hid a fence on the first line of a docs page. A sample inside a block quote is not compiled, as before: a
+  quote is an aside, such as an example of a mistake. A scan of the 80 Markdown files of the nine package repositories
+  finds no block that fails the new rules, every README gives the same samples as before, and the docs pages check the
+  same links.
+- **Docs links: code found as CommonMark finds it.** `scripts/docs_linkcheck.py` took an indented line for code only
+  after a blank line and outside lists, so a dead link in a list item's indented code failed the check; it paired
+  backticks across any lines up to a blank line, so a stray backtick could pair with one in a heading or list item below
+  it and hide every link in between; and a backslash-escaped backtick opened inline code. It now leaves out what
+  `markdown_fences.scan` reports as code or HTML (fenced and indented code, also in list items and block quotes, and
+  HTML blocks such as a commented-out link), pairs inline code within one paragraph and drops HTML comments there. An
+  indented line in a footnote stays checked, as footnotes are not followed and the line may continue the note.
+
 ## [1.4.0] - 2026-11-13: a test run per target framework, shared support workflows, family templates, package checks
 
 Minor release. Three things:
@@ -188,7 +244,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.0...v1.2.1

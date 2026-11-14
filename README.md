@@ -22,6 +22,7 @@ build stage of a release, and a composite action for the publish stage.
 | `typos/family.toml` | The family dictionary for typos: excluded generated files and the words that are correct in the family |
 | `scripts/family_lint.py`, `scripts/family_sync.py`, `scripts/docs_linkcheck.py`, `scripts/render_templates.py` | The family lint, the template check and sync, the docs link check, and the template rendering for the workflow linters, with unit tests |
 | `scripts/xmldoc_check.py`, `scripts/nuget_validation_report.py`, `scripts/coverage_table.py`, `scripts/readme_samples.py` | The package checks of `package-ci.yml` (see [Package checks](#package-checks)), with unit tests |
+| `scripts/markdown_fences.py` | Finds the fenced code blocks of a Markdown file as CommonMark does, and what each line is (code, HTML or paragraph text), for `readme_samples.py` and `docs_linkcheck.py`, with unit tests |
 | `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
 | `scripts/dependency_snapshot.py` | Builds the dependency snapshot from the restore output, with unit tests |
@@ -119,6 +120,12 @@ that a `.gitignore` pattern would hide), so every public API difference from the
 request: run `dotnet pack -p:ApiCompatGenerateSuppressionFile=true` locally and commit the regenerated file. Line
 endings don't count.
 
+The comparison leaves out the attributes listed in `.config/apicompat-excluded-attributes.txt` (a family template,
+passed to package validation by the `Directory.Build.targets` template): TUnit's `GenerateAssertionAttribute`, whose
+expectation message changes with a failure text, and the compiler's state machine attributes, whose argument names a
+generated class that is renumbered whenever a method is added. Neither changes what a consumer compiles against, so
+the suppression file records only real API differences.
+
 The smoke test project references the adapter as
 `<PackageReference Include="<Package>.TUnit" Version="$(SmokePackageVersion)" />` with a `*-*` default for
 `SmokePackageVersion`, so CI tests exactly the version it just packed.
@@ -146,13 +153,20 @@ packages. The project takes the smoke test project's package references, with th
 per-framework conditions (a dependency with a version per target framework keeps it), and turns implicit usings on,
 as in a consumer's project. `#line` directives map every sample line back to its README, so an error
 names the README line. With `readme-samples: enforce` the build fails. With `report` it is a warning: the first
-ten errors as annotations on their README lines (GitHub shows ten per step) and all of them in the job summary.
+ten errors as annotations on their README lines (GitHub shows ten per step) and all of them in the job summary. A code
+block that no fence closes fails the step in both modes.
 The compiler reports errors inside method bodies only once every declaration compiles, so fixing samples comes in
 waves: build again after each round until the list is empty.
 
 The conventions:
 - A fenced block whose info string starts with `csharp`, `cs` or `c#` is a sample. ` ```csharp no-compile ` opts a
-  block out: pseudo code, a deliberately wrong example, a sample of another package.
+  block out: pseudo code, a deliberately wrong example, a sample of another package. A block inside a block quote
+  (`> `) is no sample: a quote is an aside, such as an example of a mistake.
+- Every fenced block of a README must close (CommonMark). A closing fence has nothing but the fence characters on its
+  line and is indented at most three spaces, counted from the content of its list item or block quote. A line
+  such as "\`\`\` More text." does not close a block: GitHub and nuget.org then render the rest of the README as code,
+  or the rest of the list item or block quote when that ends the block. The step fails on any block that no fence
+  closes and names its README line, in both modes.
 - A sample may mix what a consumer writes in different places. Its leading `using` and preprocessor directives go
   to the top of the file, each top-level type declaration into the sample's own namespace, each member declaration (a
   line that starts with an attribute, an access modifier or `readonly`) into a class, and every other line, in order,
@@ -272,6 +286,18 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
    `tests/ReadmeSamples.Prelude.cs`; mark what cannot compile `no-compile`. When every sample compiles, set
    `readme-samples: enforce` in `ci.yml` and `release.yml`.
 7. To target .NET 11 next to .NET 10, see [Target frameworks](#target-frameworks).
+
+### Adopting 1.5.0 in a package repository
+
+1. Move the pins to the 1.5.0 commit (or take Renovate's digest pull request).
+2. Run `family_sync.py --write`. It adds `.config/apicompat-excluded-attributes.txt` and the item in
+   `Directory.Build.targets` that passes it to package validation.
+3. Pack both packages once with `-p:ApiCompatGenerateSuppressionFile=true` and commit the regenerated
+   `CompatibilitySuppressions.xml` files: their `CP0015` entries for `GenerateAssertionAttribute` and the state
+   machine attributes are gone. Without this step the suppression check fails the build, because pack changes the
+   committed files.
+4. A README with a fence line that has text after it, or a block that never closes, now fails the README samples step
+   (and the docs link check for the root README). Put the closing fence on its own line.
 
 ## Using `dependency-graph.yml`
 

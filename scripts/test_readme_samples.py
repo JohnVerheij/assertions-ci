@@ -45,9 +45,63 @@ class SamplesOfTests(unittest.TestCase):
         samples, _ = rs.samples_of("README.md", "\ufeff```csharp\nvar a = 1;\n```\n")
         self.assertEqual(samples[0].lines, ["var a = 1;"])
 
-    def test_unterminated_fence_runs_to_the_end(self):
-        samples, _ = rs.samples_of("README.md", "```csharp\nvar a = 1;\n")
-        self.assertEqual(samples[0].lines, ["var a = 1;"])
+    def test_unclosed_fence_is_reported_with_its_line(self):
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "# T\n\n```csharp\nvar a = 1;\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:3: this code block is never closed"))
+
+    def test_text_after_a_fence_does_not_close_the_block(self):
+        # The Metrics README case: the prose on the fence line kept the block open to the end of the file.
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "```csharp\nvar a = 1;\n``` More prose.\n\n## Next\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1:"))
+
+    def test_a_longer_fence_closes_and_a_shorter_or_other_one_does_not(self):
+        text = "````csharp\nvar a = 1;\n```\n~~~~\n`````  \nafter\n"
+        samples, _ = rs.samples_of("README.md", text)
+        self.assertEqual(samples[0].lines, ["var a = 1;", "```", "~~~~"])
+
+    def test_a_closing_fence_is_measured_from_the_list_item_content(self):
+        text = "- item\n\n  ```csharp\n  var a = 1;\n    ```\n\n```csharp\nvar b = 2;\n```\n"
+        samples, _ = rs.samples_of("README.md", text)
+        self.assertEqual([sample.lines for sample in samples], [["  var a = 1;"], ["var b = 2;"]])
+
+    def test_outside_a_list_a_closing_fence_has_at_most_three_spaces(self):
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "  ```csharp\nvar a = 1;\n    ```\n\n## Next\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1:"))
+
+    def test_a_block_inside_a_block_quote_is_no_sample(self):
+        text = "> ```csharp\n> var a = 1; // CS0000, a mistake\n> ```\n\n```csharp\nvar b = 2;\n```\n"
+        samples, skipped = rs.samples_of("README.md", text)
+        self.assertEqual(([sample.lines for sample in samples], skipped), ([["var b = 2;"]], 0))
+
+    def test_a_block_quote_ends_at_a_line_without_its_marker(self):
+        # The quoted block ends with the quote, unclosed; the fence on the third line opens another unclosed block.
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "> ```csharp\nvar a = 1;\n```\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1: this code block is never closed, so the rest "
+                                                         "of the list item or block quote renders as code."))
+
+    def test_a_block_that_ends_with_its_container_unclosed_fails_too(self):
+        # A quoted fence, a blank line, prose and a later closed fence: the quote leaves its block unclosed.
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "> ```csharp\n> var a = 1;\n\nProse.\n\n```csharp\nvar b = 2;\n```\n")
+        self.assertTrue(str(raised.exception).startswith("README.md:1:"))
+
+    def test_an_unclosed_block_at_the_end_names_the_rest_of_the_readme(self):
+        with self.assertRaises(rs.UnclosedFence) as raised:
+            rs.samples_of("README.md", "```csharp\nvar a = 1;\n")
+        self.assertIn("so the rest of the README renders as code", str(raised.exception))
+
+    def test_a_fence_indented_four_spaces_is_indented_code_not_a_sample(self):
+        samples, skipped = rs.samples_of("README.md", "Text.\n\n    ```csharp\n    var a = 1;\n    ```\n")
+        self.assertEqual((samples, skipped), ([], 0))
+
+    def test_triple_backtick_inline_code_at_a_line_start_opens_no_block(self):
+        text = "```csharp``` is inline code.\n```csharp\nvar a = 1;\n```\n~~~csharp `x`\nvar b = 2;\n~~~\n"
+        samples, _ = rs.samples_of("README.md", text)
+        self.assertEqual([sample.lines for sample in samples], [["var a = 1;"], ["var b = 2;"]])
 
     def test_source_names_the_line_directive_path(self):
         samples, _ = rs.samples_of("README.md", "```csharp\nvar a = 1;\n```\n", "/repo/README.md")
@@ -315,6 +369,15 @@ class ProjectTests(unittest.TestCase):
                 self.assertEqual(rs.main(["readme_samples.py", "Demo", "1.2.3", "net10.0"]), 0)
         finally:
             os.chdir(cwd)
+
+    def test_main_fails_on_an_unclosed_fence(self):
+        self.repository()
+        self.write("src/Demo/README.md", "# Demo\n\n```csharp\nvar a = 1;\n``` text\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            # A distinct code, which the workflow fails on in report mode as well as in enforce mode.
+            self.assertEqual(rs.main(["readme_samples.py", "Demo", "1.2.3", "net10.0", self.root]), 3)
+        self.assertTrue(out.getvalue().startswith("FAIL src/Demo/README.md:3: this code block is never closed"))
 
     def test_main_with_wrong_arguments_prints_usage(self):
         with contextlib.redirect_stdout(io.StringIO()):

@@ -70,8 +70,53 @@ class LinkCheckTests(_Base):
         self.page("index.md", "```\n[example](missing.md)\n```\n[real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
-    def test_unclosed_fence_runs_to_the_end(self):
+    def test_unclosed_fence_is_reported_and_runs_to_the_end(self):
         self.page("index.md", "[real](dead.md)\n```\n[example](missing.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'",
+                                        "index.md:2: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_a_block_that_ends_with_its_list_item_unclosed_is_reported(self):
+        self.page("index.md", "- item\n  ```\n  [example](missing.md)\nafter\n")
+        self.assertEqual(self.check(), ["index.md:2: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the list item or block quote renders as code"])
+
+    def test_text_after_a_fence_does_not_close_the_block(self):
+        # The Metrics README case: the prose on the fence line kept the block open to the end of the page.
+        self.page("index.md", "Intro.\n\n```csharp\nvar a = 1;\n``` More prose.\n\n## Next\n\n[hidden](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md:3: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_a_closing_fence_may_be_longer_and_end_in_spaces(self):
+        self.page("index.md", "```\n[example](missing.md)\n`````  \n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_closing_fence_in_a_list_item_may_be_indented_more_than_three_spaces(self):
+        # The fence starts at the item's content (two spaces); CommonMark measures the closing fence from there.
+        self.page("index.md", "- item\n\n  ```text\n  [example](missing.md)\n    ```\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_fence_indented_four_spaces_does_not_close(self):
+        self.page("index.md", "```\n    ```\n[example](missing.md)\n```\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_outside_a_list_a_closing_fence_has_at_most_three_spaces(self):
+        # Whatever the opening fence's indentation: CommonMark measures both from the page's left edge.
+        self.page("index.md", "  ```\n[example](missing.md)\n    ```\n[hidden](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md:1: code block never closed (a closing fence has nothing after it), "
+                                        "so the rest of the page renders as code"])
+
+    def test_a_paragraph_after_a_fence_on_the_marker_line_stays_in_the_item_and_checked(self):
+        # The fence's line keeps its list marker, so the indented paragraph below is not taken for indented code.
+        self.page("index.md", "- ```text\n  example\n  ```\n\n    [real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_fenced_block_in_a_nested_list_item_ignored(self):
+        self.page("index.md", "- a\n  - b\n\n    ```\n    [example](missing.md)\n      ```\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_triple_backtick_inline_code_at_a_line_start_opens_no_block(self):
+        self.page("index.md", "```x``` is inline code.\n[real](dead.md)\n~~~ `fine`\ncode\n~~~\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
     def test_backtick_fence_inside_a_tilde_fence_does_not_close_it(self):
@@ -84,6 +129,62 @@ class LinkCheckTests(_Base):
 
     def test_inline_code_does_not_span_paragraphs(self):
         self.page("index.md", "A stray ` backtick.\n\n[real](dead.md) and a ` later.")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_does_not_pair_a_backtick_with_one_in_a_heading(self):
+        self.page("index.md", "A stray ` and [real](dead.md)\n# Title with a ` too\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_does_not_pair_a_backtick_with_one_in_a_list_item(self):
+        self.page("index.md", "A stray ` and [real](dead.md)\n- item with a ` too\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_escaped_backtick_opens_no_inline_code(self):
+        self.page("index.md", "An escaped \\` and [real](dead.md) and a ` later.")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_closes_only_at_a_run_of_its_own_length(self):
+        self.page("index.md", "Use ``a ` [example](missing.md)`` here; [real](dead.md).")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_inline_code_over_two_lines_of_a_paragraph_ignored(self):
+        self.page("index.md", "Write `a\n[example](missing.md)` here; [real](dead.md).")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_link_in_an_html_block_is_not_checked(self):
+        # GitHub and DocFX show HTML block lines as raw HTML: a commented-out link is not a link.
+        self.page("index.md", "<!-- [old](missing.md) -->\n<div>[x](gone.md)</div>\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_markdown_after_the_blank_line_that_ends_an_html_block_is_checked(self):
+        self.page("index.md", "<details>\n<summary>More</summary>\n\n[real](dead.md)\n\n</details>\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_fenced_block_in_a_block_quote_ignored(self):
+        self.page("index.md", "> Note:\n>\n> ```text\n> [example](missing.md)\n> ```\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_code_right_after_a_heading_ignored(self):
+        self.page("index.md", "# Title\n    [x](missing.md)\n\n[real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_indented_code_in_a_list_item_ignored(self):
+        # Four spaces past the item's content is code in the item, not a paragraph.
+        self.page("index.md", "- item\n\n      [x](missing.md)\n\n  [real](dead.md)\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_html_comment_in_a_paragraph_is_not_checked(self):
+        self.page("index.md", "Text <!-- [old](missing.md)\nstill a comment --> and [real](dead.md).\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_a_comment_that_cmark_does_not_accept_stays_checked(self):
+        # cmark (CommonMark 0.29) shows '<!-- a -- b -->' as text, links included, so they stay checked.
+        self.page("index.md", "Text <!-- a -- [x](dead.md) --> here.\n")
+        self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
+
+    def test_an_html_block_on_a_list_marker_line_keeps_the_item(self):
+        # The marker stays, so the indented paragraph below is taken for the item's, not for indented code.
+        self.page("index.md", "- <div>x</div>\n\n    [real](dead.md)\n")
         self.assertEqual(self.check(), ["index.md: dead internal link 'dead.md'"])
 
     def test_reference_definition_in_code_ignored(self):
@@ -165,6 +266,25 @@ class EdgeCaseTests(_Base):
         with mock.patch.object(dl.os.path, "commonpath", side_effect=ValueError("different drives")):
             self.assertTrue(dl._escapes("C:\\docs", "D:\\other\\x.md"))
 
+    def test_a_byte_order_mark_does_not_hide_a_fence_on_the_first_line(self):
+        self.page("a.md", chr(0xFEFF) + "```text\n[x](gone.md)\n```\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_form_feed_does_not_split_a_line(self):
+        # str.splitlines would end the line at the form feed and leave '  ```' as a fence that never closes.
+        self.page("a.md", "text" + chr(0x0C) + "  ```\nmore\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_line_with_only_a_no_break_space_is_not_blank(self):
+        # It is paragraph text, so the indented line after it continues the paragraph and its link is checked.
+        self.page("a.md", "text\n" + chr(0x00A0) + "\n    see [x](gone.md)\n")
+        self.assertEqual(self.check(), ["a.md: dead internal link 'gone.md'"])
+
+    def test_a_line_that_starts_with_a_no_break_space_is_not_indented(self):
+        # It ends the list, so the indented line after the next blank line is code.
+        self.page("a.md", "- item\n\n" + chr(0x00A0) + "para\n\n    code [x](gone.md)\n")
+        self.assertEqual(self.check(), [])
+
 
 class MainTests(_Base):
     def run_main(self, argv):
@@ -178,13 +298,14 @@ class MainTests(_Base):
         self.page("b.md")
         code, out = self.run_main(["docs_linkcheck.py", self.docs])
         self.assertEqual(code, 0)
-        self.assertIn("OK  internal doc links resolve", out)
+        self.assertIn("OK  internal doc links resolve and code blocks close", out)
 
     def test_dead_link_exits_one_and_lists_it(self):
         self.page("a.md", "[b](gone.md)")
         code, out = self.run_main(["docs_linkcheck.py", self.docs])
         self.assertEqual(code, 1)
-        self.assertIn("FAIL (1 dead link(s)):", out)
+        self.assertIn("FAIL (1 issue(s)):", out)
+        self.assertIn("  - a.md: dead internal link 'gone.md'", out)
 
     def test_default_root_is_docs(self):
         cwd = os.getcwd()
