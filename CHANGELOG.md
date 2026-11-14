@@ -35,16 +35,18 @@ Minor release. Two things:
   (MetricsAssertions.TUnit, found in review). Such a block, and any block that no fence closes, now fails the step
   with the README line, with `readme-samples: report` as well as `enforce` (the script exits with 3 for it, and
   `package-ci.yml` fails on 3 in both modes).
-- **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py`
-  now share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from
-  the content of its container: the page, or the list item it is in. Before, `readme_samples.py` took a fence at any
+- **Fenced code blocks found as CommonMark finds them.** `scripts/readme_samples.py` and `scripts/docs_linkcheck.py` now
+  share `scripts/markdown_fences.py`. A fence opens or closes a block when it is indented at most three spaces from the
+  content of its container: the page, or the list item it is in. Before, `readme_samples.py` took a fence at any
   indentation (also a line of an indented code block) and closed a block at a fence indented any amount. A line that
   starts with inline code, such as "\`\`\`x\`\`\` text", opens no block, and a block in a list item ends with the item.
-  The scanner follows what decides where a fence can be: an ordered list item that does not start at 1, or an empty
-  item, cannot interrupt a paragraph; an indented code line is not paragraph text that a later line continues; and the
+  The scanner follows what decides where a fence can be: an ordered list item that does not start at 1, or an empty item
+  (nothing after the marker but spaces), cannot interrupt a paragraph, and an empty item ends at a blank line; a setext
+  heading underline ends a paragraph; an indented code line is not paragraph text that a later line continues; and the
   lines of an HTML block (a comment, a `<pre>` element, a block tag such as `<details>` up to the blank line that ends
-  it) are raw HTML, so a fence there is not a fence. `docs_linkcheck.py` keeps the list marker of a fence that starts
-  on the marker line, so a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine
+  it) are raw HTML, so a fence there is not a fence. Where the CommonMark reference implementations differ, the scanner
+  follows cmark, which GitHub renders Markdown with. `docs_linkcheck.py` keeps the list marker of a fence that starts on
+  the marker line, so a paragraph later in that item is still checked. A scan of the 80 Markdown files of the nine
   package repositories finds no block that fails the new rules, every README gives the same samples as before, and the
   docs pages check the same text.
 

@@ -80,6 +80,28 @@ class ListItemTests(unittest.TestCase):
     def test_a_line_after_an_empty_item_is_no_lazy_continuation(self):
         self.assertEqual(_blocks("-\ntext\n  ```\n     ```"), [(2, 4, "```", "", False)])
 
+    def test_an_empty_item_with_trailing_spaces_has_its_content_one_space_after_the_marker(self):
+        self.assertEqual(_blocks("-   \n  ```\n  x\n     ```"), [(1, 3, "```", "", True)])
+        self.assertEqual(_blocks("1.  \n   ```\n   x\n      ```"), [(1, 3, "```", "", True)])
+
+    def test_a_blank_line_after_an_empty_item_ends_the_item(self):
+        self.assertEqual(_blocks("-\n\n  ```\n  x\n     ```"), [(2, 5, "```", "", False)])
+        self.assertEqual(_blocks("-      \n\n  ```\n  x\n     ```"), [(2, 5, "```", "", False)])
+
+    def test_a_blank_line_after_an_empty_nested_item_ends_only_that_item(self):
+        self.assertEqual(_blocks("- 1.\n\n  ```\n  x\n     ```"), [(2, 4, "```", "", True)])
+
+    def test_a_setext_underline_ends_the_paragraph_of_the_item(self):
+        self.assertEqual(_blocks("- Title\n  -\ntext\n  ```\n  x\n     ```"), [(3, 6, "```", "", False)])
+        self.assertEqual(_blocks("- Title\n  ==\ntext\n  ```\n  x\n     ```"), [(3, 6, "```", "", False)])
+
+    def test_an_underline_after_a_marker_is_the_text_of_a_new_item(self):
+        self.assertEqual(_blocks("Paragraph\n- ==\ntext\n  ```\n  x\n     ```"), [(3, 5, "```", "", True)])
+
+    def test_a_setext_underline_is_no_lazy_continuation(self):
+        # '=' at the page edge continues the item's paragraph lazily; it cannot underline it.
+        self.assertEqual(_blocks("- Title\n=\ntext\n  ```\n  x\n     ```"), [(3, 5, "```", "", True)])
+
     def test_a_line_after_a_block_is_no_lazy_continuation(self):
         self.assertEqual(_blocks("- item\n  ```\n  ```\ntext\n  ```\n     ```"),
                          [(1, 2, "```", "", True), (4, 6, "```", "", False)])
@@ -98,6 +120,10 @@ class ParagraphInterruptionTests(unittest.TestCase):
 
     def test_an_empty_item_cannot_interrupt_a_paragraph(self):
         self.assertEqual(_blocks("Paragraph\n-\n  ```\n  x\n     ```"), [(2, 5, "```", "", False)])
+
+    def test_an_item_with_only_spaces_after_its_marker_is_empty(self):
+        self.assertEqual(_blocks("Paragraph\n- \n  ```text\n  code\n     ```"), [(2, 5, "```", "text", False)])
+        self.assertEqual(_blocks("Paragraph\n1.   \n   ```\n   x\n      ```"), [(2, 5, "```", "", False)])
 
     def test_a_sibling_item_after_paragraph_text_continues_the_list(self):
         self.assertEqual(_blocks("1. a\n2. b\n   ```\n   x\n      ```"), [(2, 4, "```", "", True)])
@@ -143,6 +169,12 @@ class HtmlBlockTests(unittest.TestCase):
     def test_a_complete_tag_on_its_own_line_starts_a_block_but_cannot_interrupt_a_paragraph(self):
         self.assertEqual(_blocks("<custom-tag a=\"1\">\n```\nx\n```"), [])
         self.assertEqual(_blocks("text\n<custom-tag>\n```\nx\n```"), [(2, 4, "```", "", True)])
+
+    def test_a_complete_tag_on_a_lazy_line_ends_the_item_and_starts_a_block(self):
+        # The tag interrupts no paragraph of its own container (the page), so it starts an HTML block, as in cmark.
+        self.assertEqual(_blocks("- item\n<a>\n  ```\n  x\n  ```"), [])
+        self.assertEqual(_blocks("- item\n  - sub\n  <a>\n  ```\n  x\n  ```"), [])
+        self.assertEqual(_blocks("- item\n  <a>\n  ```\n  x\n  ```"), [(2, 4, "```", "", True)])
 
     def test_html_indented_four_spaces_in_a_paragraph_is_text(self):
         self.assertEqual(_blocks("text\n    <!--\n```\nx\n```"), [(2, 4, "```", "", True)])

@@ -9,9 +9,11 @@ list item also ends where the item ends, at a line indented less than the item's
 and no item ends runs to the end of the text, so the rest of the page renders as code.
 
 The containers and blocks around a fence are followed as far as they decide where a fence can be: list items (an
-ordered item that does not start at 1, or an empty item, cannot interrupt a paragraph), indented code, and HTML blocks,
-whose lines are raw HTML (a fence inside an HTML comment, a <pre> element, or a block tag such as <details> before the
-blank line that ends it, is not a fence). Block quotes are not followed: a fence after '>' is not found."""
+ordered item that does not start at 1, or an empty item, with nothing after its marker but spaces, cannot interrupt a
+paragraph, and an empty item ends at a blank line), setext heading underlines, indented code, and HTML blocks, whose
+lines are raw HTML (a fence inside an HTML comment, a <pre> element, or a block tag such as <details> before the
+blank line that ends it, is not a fence). Block quotes are not followed: a fence after '>' is not found. Where the
+CommonMark reference implementations differ, the scanner follows cmark, which GitHub renders Markdown with."""
 import re
 from typing import NamedTuple
 
@@ -21,6 +23,8 @@ _MARKER = re.compile(r"([-+*]|(\d{1,9})[.)])( +|$)")
 _BREAK = re.compile(r" {0,3}([-*_])(?: *\1){2,} *$")
 # An ATX heading: it ends a paragraph, so a less indented line after it is not a lazy continuation.
 _HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+# A setext heading underline: right after paragraph text in the same container, it turns the paragraph into a heading.
+_SETEXT = re.compile(r" {0,3}(?:=+|-+) *$")
 # A fence and the info string after it.
 _FENCE = re.compile(r"(`{3,}|~{3,})(.*)$")
 
@@ -66,24 +70,25 @@ def _expand(line: str) -> 'tuple[str, int]':
 
 def _open_items(text: str, items: 'list[int]', interrupts_paragraph: bool) -> int:
     """Push the content column of each list item that starts on the line onto `items` (one line may start several, as
-    in '- 1. step'); return the column where the line's content starts. A marker followed by five or more spaces starts
-    an item whose content is one space after the marker (the rest is indented code). When the first item would
-    interrupt a paragraph (`interrupts_paragraph`), it must not be empty and an ordered one must start at 1; otherwise
-    the line is paragraph text."""
+    in '- 1. step'); return the column where the line's content starts. The content of an item starts one space after
+    the marker when five or more spaces follow it (the rest is indented code) or when nothing but spaces does (an empty
+    item). When the first item would interrupt a paragraph (`interrupts_paragraph`), it must not be empty and an ordered
+    one must start at 1; otherwise the line is paragraph text."""
     position = items[-1] if items else 0
     first = True
     while True:
         rest = text[position:]
         offset = len(rest) - len(rest.lstrip(" "))
         match = _MARKER.match(rest, offset) if offset <= 3 and not _BREAK.match(rest) else None
+        empty = match is not None and not rest[match.end():].strip()
         if match and first and interrupts_paragraph and (
-                not match.group(3) or (match.group(2) is not None and int(match.group(2)) != 1)):
+                empty or (match.group(2) is not None and int(match.group(2)) != 1)):
             match = None
         if not match:
             return position
         first = False
         spaces = len(match.group(3))
-        position += offset + len(match.group(1)) + (spaces if 1 <= spaces <= 4 else 1)
+        position += offset + len(match.group(1)) + (spaces if 1 <= spaces <= 4 and not empty else 1)
         items.append(position)
 
 
@@ -97,10 +102,11 @@ def _opening(text: str, position: int) -> 'tuple[str, str] | None':
     return match.group(1), match.group(2).strip()
 
 
-def _html_start(rest: str, lazy: bool) -> 'tuple[str, object] | None':
+def _html_start(rest: str, interrupts_paragraph: bool) -> 'tuple[str, object] | None':
     """How an HTML block that starts with `rest` ends, or None when `rest` starts no HTML block: ('marker', text or
     pattern) for a block that ends at a line containing the marker (searched from the start line on), or ('blank', None)
-    for one that ends at a blank line. A complete tag on a line of its own cannot interrupt a paragraph (`lazy`)."""
+    for one that ends at a blank line. A complete tag on a line of its own cannot interrupt a paragraph
+    (`interrupts_paragraph`), but it can follow one lazily, as cmark does: '- a' and then '<a>' ends the item."""
     offset = len(rest) - len(rest.lstrip(" "))
     if offset > 3:
         return None
@@ -112,7 +118,7 @@ def _html_start(rest: str, lazy: bool) -> 'tuple[str, object] | None':
             return "marker", closer
     if _HTML_DECLARATION.match(start):
         return "marker", ">"
-    if _HTML_BLOCK_TAG.match(start) or (not lazy and _HTML_COMPLETE_TAG.match(start)):
+    if _HTML_BLOCK_TAG.match(start) or (not interrupts_paragraph and _HTML_COMPLETE_TAG.match(start)):
         return "blank", None
     return None
 
@@ -159,34 +165,47 @@ def _block(lines: 'list[str]', start: int, opening: 'tuple[str, str]', column: i
 def blocks(lines: 'list[str]') -> 'list[Block]':
     """Every fenced code block of the lines, in order. A less indented line right after paragraph text continues the
     paragraph (a lazy continuation line), so it keeps the list item open; any other line indented less than an item's
-    content ends the item. A line indented four or more spaces from its container's content after anything but
-    paragraph text is indented code, which no line continues lazily. HTML blocks are skipped as raw HTML."""
+    content ends the item, and so does a blank line right after an empty item. A setext heading underline ends the
+    paragraph it follows; it is never a lazy continuation line. A line indented four or more spaces from its container's
+    content after anything but paragraph text is indented code, which no line continues lazily. HTML blocks are skipped
+    as raw HTML."""
     found: list[Block] = []
     items: list[int] = []
     lazy = False
+    # Whether the innermost item started on the line before and has no content yet.
+    empty_item = False
     index = 0
     while index < len(lines):
         text, indent = _expand(lines[index])
         if not text.strip():
+            if empty_item:
+                items = items[:-1]
+                empty_item = False
             lazy = False
             index += 1
             continue
+        empty_item = False
         reached = [column for column in items if column <= indent]
         depth = len(reached)
         # A marker inside the innermost open item (nothing closed by its indentation) would start a new list there.
-        position = _open_items(text, reached, interrupts_paragraph=lazy and depth == len(items))
+        in_paragraph = lazy and depth == len(items)
+        position = _open_items(text, reached, interrupts_paragraph=in_paragraph)
         rest = text[position:]
         started = len(reached) > depth
         offset = len(rest) - len(rest.lstrip(" "))
-        if offset >= 4 and (started or not lazy):
+        if rest.strip() and offset >= 4 and (started or not lazy):
             # Indented code: not a fence, not HTML, and not paragraph text that the next line could continue.
             items = reached
             lazy = False
             index += 1
             continue
+        # Whether the content would interrupt the paragraph in its own container, not follow it lazily or start an item.
+        interrupts = in_paragraph and not started
         opening = _opening(text, position)
-        html = None if opening else _html_start(rest, lazy)
-        other_block = opening is not None or html is not None or bool(_BREAK.match(rest) or _HEADING.match(rest))
+        html = None if opening else _html_start(rest, interrupts)
+        setext = interrupts and _SETEXT.match(rest)
+        other_block = opening is not None or html is not None or bool(
+            _BREAK.match(rest) or _HEADING.match(rest) or setext)
         if started or other_block or not lazy:
             items = reached
         column = items[-1] if items else 0
@@ -202,6 +221,7 @@ def blocks(lines: 'list[str]') -> 'list[Block]':
             continue
         # Paragraph text, which the next line may continue lazily; a heading, a break or an empty item is not.
         lazy = not other_block and bool(rest.strip())
+        empty_item = started and not rest.strip()
         index += 1
     return found
 
