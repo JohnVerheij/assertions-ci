@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-16: every .NET line consistent, from the projects to the shipped packages
+
+Minor release. The family targets every .NET version in support (`net10.0;net11.0` today), and four places drifted
+from that by hand. A repository adopts it with `family_sync.py --write` and the fixes the lint reports (see the README,
+"Adopting 1.6.0").
+
+### Added
+
+- **Target frameworks in the family lint.** `scripts/family_lint.py` checks that every project under `src/` and
+  `tests/` lists the target frameworks of the adapter project, and that the `.NET` shields.io badge and the
+  `TUnit X.Y.Z or later` requirements line of every README name exactly those .NET versions; the root and adapter
+  READMEs must have both. Over the nine package repositories it reports 14 READMEs whose badge still says `.NET-10.0`
+  next to `net10.0;net11.0`, and nothing else.
+- **.NET release gate.** New step in `package-ci.yml`, `scripts/net_line_gate.py`: per target framework, a package that
+  ships to consumers (the license gate's walk) and ships one version per .NET release must not be newer than the
+  framework, so `Microsoft.Extensions.*` 11 in the `net10.0` dependencies fails the build. Such a package is a
+  runtime, ASP.NET Core or extensions package by name whose `.nuspec` repository is `dotnet/dotnet` (where those
+  packages are built since .NET 10), `dotnet/runtime`, `dotnet/aspnetcore` or `dotnet/extensions`. Build-only packages
+  such as SourceLink do not reach consumers and are not checked. The nine package repositories pass it.
+- **`CONVENTIONS.md` is a family template.** The copies in the package repositories had two versions of the TFM policy
+  section (one named a Math dependency in the Grpc copy). The template has one, which also states the rules the lint
+  and the gate check.
+
+### Changed
+
+- **Renovate: no major updates for packages that ship one version per .NET release** (`Microsoft.AspNetCore.*`,
+  `Microsoft.Bcl.*`, `Microsoft.Extensions.*`, `System.Numerics.Tensors`). They waited for approval in the Dependency
+  Dashboard, where approving one would move every target framework to the newest .NET release. A new major belongs to
+  a new target framework, added by hand. The SDK and SourceLink keep the approval.
+- `license_gate.py` shares its per-framework walk (`shipped_for`) and its `.nuspec` lookup (`find_nuspec`) with the
+  .NET release gate; what it checks is unchanged.
+
 ## [1.5.0] - 2026-11-14: API comparison without attribute noise, code blocks that must close
 
 Minor release. Two things:
@@ -244,7 +276,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.2.1...v1.3.0

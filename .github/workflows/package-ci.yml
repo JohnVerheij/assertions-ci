@@ -215,6 +215,12 @@ jobs:
           LICENSE_ALLOWLIST: ${{ inputs.license-allowlist }}
         run: python3 .assertions-ci/scripts/license_gate.py
 
+      - name: .NET release gate
+        # Per target framework, no package that ships to consumers (the license gate's walk) comes from a newer .NET
+        # release: Microsoft.Extensions.* 11 in the net10.0 dependencies would give .NET 10 consumers .NET 11
+        # assemblies. Reads the restore output of src/* and the .nuspec of each package.
+        run: python3 .assertions-ci/scripts/net_line_gate.py
+
       - name: Test core suite (with coverage)
         # The core test project references only the core package, so a TUnit type leaking into the
         # core's public surface fails to compile here. The = form of --coverage-output-format avoids a

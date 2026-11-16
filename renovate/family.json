@@ -83,12 +83,23 @@
       "platformAutomerge": true
     },
     {
-      "description": "Packages that follow the .NET release line. A package targets every supported .NET version, and each target framework takes the dependency version of its own .NET release (conditional ItemGroups in Directory.Packages.props), so a new major is a deliberate change: a new target framework, not a bump of the existing entries. Their major updates wait for approval in the Dependency Dashboard instead of opening a pull request that would move every entry; minor and patch updates stay automatic within each line.",
+      "description": "Packages that ship one version per .NET release. A package targets every supported .NET version, and each target framework takes the version of its own .NET release (conditional ItemGroups in Directory.Packages.props), so a new major belongs to a new target framework, added by hand under the TFM policy, never a bump of an existing entry: in the net10.0 group it would hand .NET 11 packages to .NET 10 consumers. Their major updates are therefore off, not waiting in the Dependency Dashboard; minor and patch updates stay automatic within each line. Package CI checks the same rule on what actually ships.",
+      "matchPackageNames": [
+        "Microsoft.AspNetCore.*",
+        "Microsoft.Bcl.*",
+        "Microsoft.Extensions.*",
+        "System.Numerics.Tensors"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "The SDK (global.json) and SourceLink (build-only, versioned with the SDK). A new major is deliberate: SDK 12 comes with .NET 12, and its SourceLink with it. Their major updates wait for approval in the Dependency Dashboard; minor and patch updates stay automatic.",
       "matchPackageNames": [
         "dotnet-sdk",
-        "Microsoft.Extensions.*",
-        "Microsoft.SourceLink.GitHub",
-        "System.Numerics.Tensors"
+        "Microsoft.SourceLink.GitHub"
       ],
       "matchUpdateTypes": [
         "major"

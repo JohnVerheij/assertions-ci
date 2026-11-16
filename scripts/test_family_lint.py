@@ -386,6 +386,101 @@ class ReadmeFactsTests(_Base):
         self.assertEqual(self.repo(security=None), [])
 
 
+FRAMEWORKS_CSPROJ = "<Project><PropertyGroup><TargetFrameworks>{}</TargetFrameworks></PropertyGroup></Project>"
+NET_BADGE = "[![.NET](https://img.shields.io/badge/.NET-{}-512BD4.svg)](https://dotnet.microsoft.com/)"
+REQUIREMENTS = "**Requirements:** TUnit 1.83.0 or later, .NET 10 or .NET 11."
+
+
+class FrameworkTests(_Base):
+    def repo(self, frameworks="net10.0;net11.0", badge="10.0%20%7C%2011.0", requirements=REQUIREMENTS,
+             adapter_badge=None):
+        _write(self.dir, "src/GrpcAssertions.TUnit/GrpcAssertions.TUnit.csproj", FRAMEWORKS_CSPROJ.format(frameworks))
+        root = (NET_BADGE.format(badge) + "\n" if badge else "") + (requirements or "")
+        _write(self.dir, "README.md", root)
+        adapter = adapter_badge if adapter_badge is not None else badge
+        _write(self.dir, "src/GrpcAssertions.TUnit/README.md",
+               (NET_BADGE.format(adapter) + "\n" if adapter else "") + (requirements or ""))
+        return fl.lint_frameworks(self.dir, "GrpcAssertions")
+
+    def test_conforming_repo_has_no_issues(self):
+        self.assertEqual(self.repo(), [])
+
+    def test_badge_order_and_spaces_do_not_matter(self):
+        self.assertEqual(self.repo(badge="11.0%20|%2010.0"), [])
+
+    def test_adapter_without_frameworks_skips_the_check(self):
+        _write(self.dir, "src/GrpcAssertions.TUnit/GrpcAssertions.TUnit.csproj", ADAPTER_CSPROJ)
+        _write(self.dir, "README.md", "no badge")
+        self.assertEqual(fl.lint_frameworks(self.dir, "GrpcAssertions"), [])
+
+    def test_missing_adapter_project_skips_the_check(self):
+        self.assertEqual(fl.lint_frameworks(self.dir, "GrpcAssertions"), [])
+
+    def test_project_with_other_frameworks_flagged(self):
+        _write(self.dir, "tests/GrpcAssertions.Tests/GrpcAssertions.Tests.csproj", FRAMEWORKS_CSPROJ.format("net10.0"))
+        self.assertEqual(self.repo(), ["tests/GrpcAssertions.Tests/GrpcAssertions.Tests.csproj: target frameworks "
+                                       "net10.0 differ from the adapter's net10.0;net11.0"])
+
+    def test_project_in_another_order_is_fine(self):
+        _write(self.dir, "src/GrpcAssertions/GrpcAssertions.csproj", FRAMEWORKS_CSPROJ.format(" net11.0; net10.0; "))
+        self.assertEqual(self.repo(), [])
+
+    def test_project_that_inherits_or_conditions_its_frameworks_is_skipped(self):
+        _write(self.dir, "tests/A/A.csproj", "<Project><PropertyGroup /></Project>")
+        _write(self.dir, "tests/B/B.csproj",
+               "<Project><PropertyGroup><TargetFrameworks Condition=\"'$(X)' == ''\">net8.0</TargetFrameworks>"
+               "</PropertyGroup></Project>")
+        self.assertEqual(self.repo(), [])
+
+    def test_single_framework_element_is_read(self):
+        _write(self.dir, "tests/A/A.csproj", "<Project><PropertyGroup><TargetFramework>net9.0</TargetFramework>"
+                                             "</PropertyGroup></Project>")
+        self.assertTrue(_matches(self.repo(), "tests/A/A.csproj: target frameworks net9.0 differ"))
+
+    def test_frameworks_without_a_net_version_check_only_the_projects(self):
+        self.assertEqual(self.repo(frameworks="netstandard2.0", badge=None, requirements="TUnit 1.83.0 or later"), [])
+
+    def test_badge_that_misses_a_version_flagged(self):
+        issues = self.repo(badge="10.0")
+        self.assertEqual(issues, ["README.md: .NET badge names 10.0, the packages target 10.0 | 11.0",
+                                  "src/GrpcAssertions.TUnit/README.md: .NET badge names 10.0, "
+                                  "the packages target 10.0 | 11.0"])
+
+    def test_required_readme_without_badge_flagged(self):
+        issues = self.repo(adapter_badge="")
+        self.assertEqual(issues, ["src/GrpcAssertions.TUnit/README.md: no .NET badge "
+                                  "(img.shields.io/badge/.NET-...) naming 10.0 | 11.0"])
+
+    def test_core_readme_badge_checked_when_present(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", NET_BADGE.format("10.0"))
+        self.assertEqual(self.repo(), ["src/GrpcAssertions/README.md: .NET badge names 10.0, "
+                                       "the packages target 10.0 | 11.0"])
+
+    def test_core_readme_without_badge_or_requirements_is_fine(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "TUnit 1.83.0 or later, needed by the adapter only.")
+        self.assertEqual(self.repo(), [])
+
+    def test_requirements_line_with_another_version_flagged(self):
+        issues = self.repo(requirements="**Requirements:** TUnit 1.83.0 or later, .NET 10.")
+        self.assertEqual(issues, ["README.md: the requirements line names .NET 10, the packages target .NET 10, 11",
+                                  "src/GrpcAssertions.TUnit/README.md: the requirements line names .NET 10, "
+                                  "the packages target .NET 10, 11"])
+
+    def test_required_requirements_line_without_net_version_flagged(self):
+        issues = self.repo(requirements="**Requirements:** TUnit 1.83.0 or later.")
+        self.assertTrue(_matches(issues, "README.md: the requirements line names no .NET version"))
+        self.assertEqual(len(issues), 2)
+
+    def test_core_requirements_line_is_checked_when_it_names_a_version(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "Targets .NET 9; the adapter needs TUnit 1.83.0 or later.")
+        self.assertTrue(_matches(self.repo(), "src/GrpcAssertions/README.md: the requirements line names .NET 9"))
+
+    def test_missing_readme_is_left_to_the_minimum_check(self):
+        self.repo()
+        os.remove(os.path.join(self.dir, "README.md"))
+        self.assertEqual(fl.lint_frameworks(self.dir, "GrpcAssertions"), [])
+
+
 class MainTests(_Base):
     def test_conforming_repo_exits_zero(self):
         _write(self.dir, "CHANGELOG.md", VALID)
