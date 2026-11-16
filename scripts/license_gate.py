@@ -81,28 +81,57 @@ def find_target(targets: dict, name: str) -> str | None:
     return None
 
 
-def shipped_packages(assets: dict) -> set[str]:
-    """Keys like 'Name/Version' of every package that reaches a consumer of this project."""
+def framework_targets(assets: dict, alias: str) -> dict | None:
+    """The restore targets of one target framework: the key is the alias (net10.0), or the alias and a runtime
+    identifier (net10.0/win-x64) when the restore used one; None when there is neither."""
+    targets = assets["targets"]
+    if alias in targets:
+        return targets[alias]
+    return next((value for key, value in targets.items() if key.startswith(alias + "/")), None)
+
+
+def shipped_for(assets: dict, alias: str) -> set[str]:
+    """Keys like 'Name/Version' of every package that reaches a consumer of this project on one target framework.
+    Without restore targets for the framework, the first targets of the file are walked."""
+    framework = assets["project"]["frameworks"][alias]
+    targets = framework_targets(assets, alias) or next(iter(assets["targets"].values()))
     result: set[str] = set()
-    for alias, framework in assets["project"]["frameworks"].items():
-        targets = assets["targets"].get(alias) or next(iter(assets["targets"].values()))
-        queue = []
-        for name, dep in framework.get("dependencies", {}).items():
-            if dep.get("target") != "Package" or dep.get("suppressParent") == "All":
-                continue
-            key = find_target(targets, name)
-            if key:
-                queue.append(key)
-        while queue:
-            key = queue.pop()
-            if key in result or targets.get(key, {}).get("type") != "package":
-                continue
-            result.add(key)
-            for child in targets[key].get("dependencies", {}):
-                child_key = find_target(targets, child)
-                if child_key:
-                    queue.append(child_key)
+    queue = []
+    for name, dep in framework.get("dependencies", {}).items():
+        if dep.get("target") != "Package" or dep.get("suppressParent") == "All":
+            continue
+        key = find_target(targets, name)
+        if key:
+            queue.append(key)
+    while queue:
+        key = queue.pop()
+        if key in result or targets.get(key, {}).get("type") != "package":
+            continue
+        result.add(key)
+        for child in targets[key].get("dependencies", {}):
+            child_key = find_target(targets, child)
+            if child_key:
+                queue.append(child_key)
     return result
+
+
+def shipped_packages(assets: dict) -> set[str]:
+    """Keys like 'Name/Version' of every package that reaches a consumer of this project, on any target framework."""
+    result: set[str] = set()
+    for alias in assets["project"]["frameworks"]:
+        result |= shipped_for(assets, alias)
+    return result
+
+
+def find_nuspec(assets: dict, key: str) -> str | None:
+    """The .nuspec of a package ('Name/Version') in the restore's package folders; None when no folder has it."""
+    name = key.partition("/")[0]
+    library = assets["libraries"].get(key, {})
+    for folder in assets.get("packageFolders", {}):
+        candidate = os.path.join(folder, library.get("path", key.lower()), name.lower() + ".nuspec")
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 
 def main() -> int:
@@ -118,19 +147,12 @@ def main() -> int:
     for assets_path in assets_files:
         with open(assets_path, encoding="utf-8") as f:
             assets = json.load(f)
-        folders = list(assets.get("packageFolders", {}).keys())
         for key in sorted(shipped_packages(assets)):
             if key in seen:
                 continue
             seen.add(key)
             name, _, version = key.partition("/")
-            library = assets["libraries"].get(key, {})
-            nuspec = None
-            for folder in folders:
-                candidate = os.path.join(folder, library.get("path", key.lower()), name.lower() + ".nuspec")
-                if os.path.exists(candidate):
-                    nuspec = candidate
-                    break
+            nuspec = find_nuspec(assets, key)
             if nuspec is None:
                 rows.append((name, version, "nuspec not found", "FAIL"))
                 failures += 1

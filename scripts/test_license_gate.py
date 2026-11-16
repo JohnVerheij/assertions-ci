@@ -112,6 +112,24 @@ class ShippedPackagesTests(unittest.TestCase):
         self.assertEqual(gate.shipped_packages(assets_document()),
                          {"Shipped.Lib/1.0.0", "Transitive.Lib/1.2.0"})
 
+    def test_each_framework_is_walked_in_full(self):
+        # The same package version can have other dependencies on another framework. Each framework's walk follows
+        # its own, so a dependency only net11.0 has is found although net10.0 already walked the package.
+        document = assets_document()
+        document["project"]["frameworks"]["net11.0"] = document["project"]["frameworks"]["net10.0"]
+        document["targets"]["net11.0"] = {
+            "Shipped.Lib/1.0.0": {"type": "package", "dependencies": {"Only.On.Net11": "1.0.0"}},
+            "Only.On.Net11/1.0.0": {"type": "package"},
+        }
+        self.assertEqual(gate.shipped_packages(document),
+                         {"Shipped.Lib/1.0.0", "Transitive.Lib/1.2.0", "Only.On.Net11/1.0.0"})
+
+    def test_framework_targets_with_a_runtime_identifier(self):
+        document = assets_document()
+        document["targets"] = {"net10.0/linux-x64": document["targets"]["net10.0"]}
+        self.assertIs(gate.framework_targets(document, "net10.0"), document["targets"]["net10.0/linux-x64"])
+        self.assertIsNone(gate.framework_targets(document, "net11.0"))
+
 
 class MainTests(unittest.TestCase):
     def run_gate(self, transitive_license: str, allowlist: str = "") -> tuple[int, str]:

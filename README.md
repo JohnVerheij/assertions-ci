@@ -11,9 +11,9 @@ build stage of a release, and a composite action for the publish stage.
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/package-ci.yml` | Reusable CI for one package repository: build, tests with coverage on each target framework, license gate, pack, API compatibility suppression check, NuGet package validation, XML documentation check, package-content check, smoke test against the packed package, README code samples, Native AOT gate. With `release: true`, the build stage of a release |
+| `.github/workflows/package-ci.yml` | Reusable CI for one package repository: build, tests with coverage on each target framework, license gate, .NET release gate, pack, API compatibility suppression check, NuGet package validation, XML documentation check, package-content check, smoke test against the packed package, README code samples, Native AOT gate. With `release: true`, the build stage of a release |
 | `.github/actions/package-publish/` | Composite action for the publish job of a package repository's `release.yml`: tag and checksum checks, attestations, NuGet push, GitHub release |
-| `.github/workflows/package-lint.yml` | Reusable family lint: CHANGELOG format, PackageTags, known British spellings, README facts, the shared files against the family templates, and typos with the family dictionary |
+| `.github/workflows/package-lint.yml` | Reusable family lint: CHANGELOG format, PackageTags, known British spellings, README facts, target frameworks, the shared files against the family templates, and typos with the family dictionary |
 | `.github/workflows/package-docs.yml` | Reusable documentation site: build, internal link check, docfx, GitHub Pages deployment |
 | `.github/workflows/package-codeql.yml` | Reusable CodeQL analysis (the C# of the shipped projects under `src/`, and the repository's workflows), with the shared configuration in `codeql/package-config.yml` |
 | `.github/workflows/package-zizmor.yml` | Reusable zizmor audit of the repository's workflows |
@@ -25,6 +25,7 @@ build stage of a release, and a composite action for the publish stage.
 | `scripts/markdown_fences.py` | Finds the fenced code blocks of a Markdown file as CommonMark does, and what each line is (code, HTML or paragraph text), for `readme_samples.py` and `docs_linkcheck.py`, with unit tests |
 | `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
+| `scripts/net_line_gate.py` | .NET release gate used by `package-ci.yml`: no runtime, ASP.NET Core or extensions package that ships to consumers comes from a newer .NET release than its target framework, with unit tests |
 | `scripts/dependency_snapshot.py` | Builds the dependency snapshot from the restore output, with unit tests |
 | `scripts/release_version.py`, `scripts/release_notes.py`, `scripts/verify_tag.py` | Version gate, CHANGELOG extraction and tag check for releases, with unit tests |
 | `.github/workflows/actionlint.yml` | Lints every workflow (syntax, expressions, shellcheck), including the workflow templates rendered for a demo package |
@@ -109,6 +110,12 @@ version's SDK for its runtime, and `global.json` keeps selecting the pinned one.
 .NET 11 SDK, a repository adds `net11.0` next to `net10.0` by changing its projects only. A test project must target
 `netX.Y` frameworks only.
 
+Every project of a repository lists the target frameworks of the adapter project, and the `.NET` badge and the
+`TUnit X.Y.Z or later` requirements line of every README name exactly those .NET versions (the root and adapter READMEs
+must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the lint.
+Per framework, the .NET release gate below checks that no shipped runtime, ASP.NET Core or extensions package comes
+from a newer .NET release.
+
 When `global.json` moves to the .NET 11 SDK, pack writes `CompatibilitySuppressions.xml` without a byte order mark.
 The suppression check below compares the file byte for byte (apart from line endings), so commit the file as pack
 writes it.
@@ -143,6 +150,7 @@ Besides the tests, `package-ci.yml` checks what a consumer gets:
 | Coverage per test run | Nothing: before the merge, a table in the job summary shows each suite's coverage per framework and assembly, so code that only one framework covers shows. The thresholds apply to the merged report |
 | NuGet package validation | [Meziantou's validator](https://github.com/meziantou/Meziantou.Framework) on every packed package: SourceLink and a deterministic build, symbols whose sources resolve, XML documentation, readme, license, repository metadata, tags, optimized assemblies. An icon is required from version 1.0.0. The tool's version is pinned in the workflow and updated by Renovate here |
 | XML documentation | `scripts/xmldoc_check.py` on the packed XML documentation, which is what an IDE shows: an empty member, a generator placeholder summary (`Generated extension method for ...`), or an `<inheritdoc cref>` (also one inside `<summary>`) that leads to no summary. A summary with only a reference such as `<see cref>` counts. A target is resolved in the same framework where it exists; a member of a documented type without an entry of its own is reported, any other target outside the packages (TUnit, the .NET libraries) is not checked |
+| .NET release gate | `scripts/net_line_gate.py` on the restore output of `src/*`: per target framework, a package that ships to consumers (the license gate's walk) and ships one version per .NET release must not be newer than the framework. Microsoft.Extensions.Logging 11.0.0 in the `net10.0` dependencies fails it. Such a package is a `System.*`, `Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.Bcl.*`, `Microsoft.NETCore.*` or `Microsoft.Win32.*` package whose `.nuspec` repository is `dotnet/dotnet`, `dotnet/runtime`, `dotnet/aspnetcore` or `dotnet/extensions`; a package whose `.nuspec` names no repository is not checked. Build-only packages (PrivateAssets=all, such as SourceLink) are not checked either |
 | README code samples | See below; `report` by default |
 
 #### README code samples
@@ -219,24 +227,27 @@ The family templates keep both identical across the repositories.
 
 It reads the preset from this repository's default branch, so a Renovate change lands once for all repositories.
 Besides the shared rules (semver for NuGet, the TUnit group, auto-merge of non-major updates, the commit conventions),
-it has two family rules:
+it has three family rules:
 - **TUnit version literals:** the `TUnit X.Y.Z or later` line of every README, the smoke test's `TUnit` reference and
   the bug-report form move in the same pull request as `Directory.Packages.props`.
-- **Packages of the .NET release line** (`dotnet-sdk`, `Microsoft.Extensions.*`, `Microsoft.SourceLink.GitHub`,
-  `System.Numerics.Tensors`): a major update waits for approval in the Dependency Dashboard. A package takes the
-  dependency version of each target framework's own .NET release (a conditional `ItemGroup` per framework in
-  `Directory.Packages.props`), so a new major means a new target framework, not a bump of the existing entries.
-  Minor and patch updates stay automatic within each line.
+- **Packages that ship one version per .NET release** (`Microsoft.AspNetCore.*`, `Microsoft.Bcl.*`,
+  `Microsoft.Extensions.*`, `System.Numerics.Tensors`): no major updates. Each target framework takes the version of
+  its own .NET release (a conditional `ItemGroup` per framework in `Directory.Packages.props`), so a new major belongs
+  to a new target framework, added by hand under the TFM policy, and never to an existing entry. Minor and patch
+  updates stay automatic within each line. The .NET release gate checks what ships, for every runtime package, not
+  only these names.
+- **The SDK and SourceLink** (`dotnet-sdk`, `Microsoft.SourceLink.GitHub`): a major update waits for approval in the
+  Dependency Dashboard, because it comes with a new .NET release.
 
 ## Family templates
 
 `templates/package/` holds the files every package repository shares, at their path in the repository: the
-`.gitattributes` and `.gitignore`, `Directory.Build.props` and `Directory.Build.targets`, the community files, the
-docs-site files, the Renovate configuration, and the workflow callers. The callers are stored as
-`<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL) reads them as workflows, and
-`docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON; `family_sync.py` writes them
-without the suffix. This repository's own Renovate configuration adds the templates to
-its GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
+`.gitattributes` and `.gitignore`, `Directory.Build.props` and `Directory.Build.targets`, the community files,
+`CONVENTIONS.md` (the code conventions of the family), the docs-site files, the Renovate configuration, and the workflow
+callers. The callers are stored as `<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL)
+reads them as workflows, and `docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON;
+`family_sync.py` writes them without the suffix. This repository's own Renovate configuration adds the templates to its
+GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
 Placeholders:
 
 | Placeholder | Value |
@@ -298,6 +309,18 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
    committed files.
 4. A README with a fence line that has text after it, or a block that never closes, now fails the README samples step
    (and the docs link check for the root README). Put the closing fence on its own line.
+
+### Adopting 1.6.0 in a package repository
+
+1. Move the pins to the 1.6.0 commit (or take Renovate's digest pull request).
+2. Run `family_sync.py --write`. It writes `CONVENTIONS.md` from the template: the copies had three versions of the
+   TFM policy section, now one.
+3. Run `family_lint.py`. It now reports a project whose target frameworks differ from the adapter's, and a README
+   whose `.NET` badge or requirements line does not name every target framework (for example a badge that still says
+   `.NET-10.0` next to `net10.0;net11.0`). Fix what it reports.
+4. The .NET release gate runs in `package-ci.yml` without any change in the repository. It fails when a runtime,
+   ASP.NET Core or extensions package that reaches consumers of a target framework comes from a newer .NET release;
+   give that framework the version of its own release in `Directory.Packages.props`.
 
 ## Using `dependency-graph.yml`
 

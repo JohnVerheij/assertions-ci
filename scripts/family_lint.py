@@ -10,6 +10,8 @@ Checks, each exit 1 on a violation:
   baselines excepted);
 - README facts: the TUnit minimum in every README equals the central TUnit version, the adapter README names every
   sibling package, and the first row of the SECURITY.md supported-versions table is the current version line;
+- target frameworks: every project lists the target frameworks of the adapter project, and the .NET badge and the
+  requirements line of every README name exactly those .NET versions;
 - the shared files match the family templates (family_sync.py check: templates/package/, obsolete files, local tools).
 """
 import glob
@@ -17,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 # The sibling module family_sync, also when Python runs isolated (-I), which leaves the script's folder off sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -179,6 +182,14 @@ TUNIT_PIN_RE = re.compile(r'<PackageVersion\s+Include="TUnit"\s+Version="([^"]+)
 FLOOR_RE = re.compile(r"TUnit (\d+\.\d+\.\d+) or later")
 VERSION_RE = re.compile(r"<Version>(\d+)\.(\d+)\.\d+[^<]*</Version>")
 VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
+# An unconditional <TargetFrameworks> or <TargetFramework> element (a conditional one has an attribute, so no match;
+# commented-out elements are removed first).
+FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
+XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
+# The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
+NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
+NET_MENTION_RE = re.compile(r"\.NET (\d+)\b")
 
 
 def _read(path: str) -> str:
@@ -300,6 +311,83 @@ def _security_issues(root: str, package: str) -> list[str]:
     return []
 
 
+def project_frameworks(path: str) -> 'list[str] | None':
+    """The target frameworks of a project file, in order; None when it declares none (it inherits them) or only an
+    empty element."""
+    found = FRAMEWORKS_RE.search(XML_COMMENT_RE.sub("", _read(path)))
+    names = [name.strip() for name in found.group(2).split(";") if name.strip()] if found else []
+    return names or None
+
+
+def _net_versions(frameworks: list[str]) -> list[str]:
+    """The .NET versions of the target frameworks (net10.0 gives 10.0), in order; other frameworks are left out."""
+    versions = []
+    for name in frameworks:
+        match = NET_FRAMEWORK_RE.match(name)
+        if match:
+            versions.append(f"{match.group(1)}.{match.group(2)}")
+    return versions
+
+
+def _project_issues(root: str, expected: list[str], adapter: str) -> list[str]:
+    out = []
+    for path in sorted(glob.glob(os.path.join(root, "src", "**", "*.csproj"), recursive=True)
+                       + glob.glob(os.path.join(root, "tests", "**", "*.csproj"), recursive=True)):
+        name = os.path.relpath(path, root).replace(os.sep, "/")
+        frameworks = project_frameworks(path)
+        if name != adapter and frameworks is not None and set(frameworks) != set(expected):
+            out.append(f"{name}: target frameworks {';'.join(frameworks)} differ from the adapter's {';'.join(expected)}")
+    return out
+
+
+def _readme_net_issues(name: str, text: str, versions: list[str], required: bool) -> list[str]:
+    """The .NET badge and the requirements line of one README against the .NET versions of the packages."""
+    out = []
+    wanted = " | ".join(versions)
+    badges = NET_BADGE_RE.findall(text)
+    if not badges and required:
+        out.append(f"{name}: no .NET badge (img.shields.io/badge/.NET-...) naming {wanted}")
+    for badge in badges:
+        # shields.io writes a space as %20 or _; the versions are separated by | (%7C).
+        named = [part.strip() for part in urllib.parse.unquote(badge).replace("_", " ").split("|")]
+        if set(named) != set(versions):
+            out.append(f"{name}: .NET badge names {' | '.join(named)}, the packages target {wanted}")
+    majors = {version.split(".")[0] for version in versions}
+    for line in text.splitlines():
+        if not FLOOR_RE.search(line):
+            continue
+        mentioned = set(NET_MENTION_RE.findall(line))
+        if not mentioned:
+            if required:
+                out.append(f"{name}: the requirements line names no .NET version (the packages target {wanted})")
+        elif mentioned != majors:
+            out.append(f"{name}: the requirements line names .NET {', '.join(sorted(mentioned, key=int))}, "
+                       f"the packages target .NET {', '.join(sorted(majors, key=int))}")
+    return out
+
+
+def lint_frameworks(root: str, package: str) -> list[str]:
+    """Target frameworks that drift by hand: every project lists the adapter's, and every README's .NET badge and
+    requirements line name the same .NET versions. Nothing to compare when the adapter project declares none."""
+    adapter = f"src/{package}.TUnit/{package}.TUnit.csproj"
+    path = os.path.join(root, *adapter.split("/"))
+    expected = project_frameworks(path) if os.path.isfile(path) else None
+    if not expected:
+        return []
+    out = _project_issues(root, expected, adapter)
+    versions = _net_versions(expected)
+    if not versions:
+        return out
+    required = {"README.md", f"src/{package}.TUnit/README.md"}
+    readmes = sorted(required | {os.path.relpath(p, root).replace(os.sep, "/")
+                                 for p in glob.glob(os.path.join(root, "src", "*", "README.md"))})
+    for name in readmes:
+        readme = os.path.join(root, *name.split("/"))
+        if os.path.isfile(readme):  # a missing required README is reported by the TUnit-minimum check
+            out += _readme_net_issues(name, _read(readme), versions, name in required)
+    return out
+
+
 def lint_readme_facts(root: str, package: str) -> list[str]:
     """README facts that drift by hand: the TUnit minimum, the family list and the supported-versions table."""
     return _floor_issues(root, package) + _family_issues(root, package) + _security_issues(root, package)
@@ -318,6 +406,7 @@ def main(argv: list[str]) -> int:
     package = adapter_package(root)
     if package:
         issues += lint_readme_facts(root, package)
+        issues += lint_frameworks(root, package)
         drift = family_sync.check(root, package)
         issues += drift
     if issues:
@@ -327,7 +416,7 @@ def main(argv: list[str]) -> int:
         if drift:
             print("Update the shared files with: python3 .assertions-ci/scripts/family_sync.py --write")
         return 1
-    print("OK  changelog, package tags, spelling, README facts and family templates conform")
+    print("OK  changelog, package tags, spelling, README facts, target frameworks and family templates conform")
     return 0
 
 
