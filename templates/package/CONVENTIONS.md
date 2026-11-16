@@ -329,8 +329,11 @@ patch. Dependencies that ship a version per .NET release (the `Microsoft.Extensi
 for example) take the version of their own release for each target framework, through
 per-framework `ItemGroup`s in `Directory.Packages.props`. Package CI fails when a runtime, ASP.NET
 Core or extensions package that reaches consumers comes from a newer .NET release than its target
-framework. Consumers who need an older target framework pin an older package version. Wide
-multi-targeting that includes versions out of support (for example `net8;net9;net10`) is not used.
+framework. The gate knows such a package by its name (`System.*`, `Microsoft.Extensions.*` and the
+like) and by the repository its `.nuspec` names (dotnet/dotnet, dotnet/runtime, dotnet/aspnetcore
+or dotnet/extensions); a package whose `.nuspec` names no repository is not checked. Consumers who
+need an older target framework pin an older package version. Wide multi-targeting that includes
+versions out of support (for example `net8;net9;net10`) is not used.
 
 ## Verify is not promoted
 

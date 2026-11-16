@@ -46,6 +46,10 @@ A repository adopts it with `family_sync.py --write` and the fixes the lint repo
 - **License gate: every target framework is walked in full.** A package version already walked for one framework was
   not walked again for the next, so a dependency that only a later framework has (the same package version can depend
   on other packages per framework) went unchecked.
+- **Dependency snapshot: a restore with a runtime identifier.** When the restore keyed each graph by framework and
+  runtime (`net10.0/linux-x64`), `dependency_snapshot.py` read the first graph of the file for every framework, so a
+  package that only another framework uses was missing from the dependency submission. Each framework now reads its
+  own graph, the way the license gate selects it (`framework_targets`).
 
 ## [1.5.0] - 2026-11-14: API comparison without attribute noise, code blocks that must close
 

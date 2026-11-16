@@ -25,7 +25,7 @@ build stage of a release, and a composite action for the publish stage.
 | `scripts/markdown_fences.py` | Finds the fenced code blocks of a Markdown file as CommonMark does, and what each line is (code, HTML or paragraph text), for `readme_samples.py` and `docs_linkcheck.py`, with unit tests |
 | `.github/workflows/dependency-graph.yml` | Reusable workflow that submits the resolved NuGet dependencies (exact versions, transitive included) to GitHub's dependency graph |
 | `scripts/license_gate.py` | License gate used by `package-ci.yml`, with unit tests in `scripts/test_license_gate.py` |
-| `scripts/net_line_gate.py` | .NET release gate used by `package-ci.yml`: no package that ships to consumers comes from a newer .NET release than its target framework, with unit tests |
+| `scripts/net_line_gate.py` | .NET release gate used by `package-ci.yml`: no runtime, ASP.NET Core or extensions package that ships to consumers comes from a newer .NET release than its target framework, with unit tests |
 | `scripts/dependency_snapshot.py` | Builds the dependency snapshot from the restore output, with unit tests |
 | `scripts/release_version.py`, `scripts/release_notes.py`, `scripts/verify_tag.py` | Version gate, CHANGELOG extraction and tag check for releases, with unit tests |
 | `.github/workflows/actionlint.yml` | Lints every workflow (syntax, expressions, shellcheck), including the workflow templates rendered for a demo package |
@@ -113,7 +113,8 @@ version's SDK for its runtime, and `global.json` keeps selecting the pinned one.
 Every project of a repository lists the target frameworks of the adapter project, and the `.NET` badge and the
 `TUnit X.Y.Z or later` requirements line of every README name exactly those .NET versions (the root and adapter READMEs
 must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the lint.
-Per framework, the .NET release gate below checks that no shipped package comes from a newer .NET release.
+Per framework, the .NET release gate below checks that no shipped runtime, ASP.NET Core or extensions package comes
+from a newer .NET release.
 
 When `global.json` moves to the .NET 11 SDK, pack writes `CompatibilitySuppressions.xml` without a byte order mark.
 The suppression check below compares the file byte for byte (apart from line endings), so commit the file as pack
@@ -149,7 +150,7 @@ Besides the tests, `package-ci.yml` checks what a consumer gets:
 | Coverage per test run | Nothing: before the merge, a table in the job summary shows each suite's coverage per framework and assembly, so code that only one framework covers shows. The thresholds apply to the merged report |
 | NuGet package validation | [Meziantou's validator](https://github.com/meziantou/Meziantou.Framework) on every packed package: SourceLink and a deterministic build, symbols whose sources resolve, XML documentation, readme, license, repository metadata, tags, optimized assemblies. An icon is required from version 1.0.0. The tool's version is pinned in the workflow and updated by Renovate here |
 | XML documentation | `scripts/xmldoc_check.py` on the packed XML documentation, which is what an IDE shows: an empty member, a generator placeholder summary (`Generated extension method for ...`), or an `<inheritdoc cref>` (also one inside `<summary>`) that leads to no summary. A summary with only a reference such as `<see cref>` counts. A target is resolved in the same framework where it exists; a member of a documented type without an entry of its own is reported, any other target outside the packages (TUnit, the .NET libraries) is not checked |
-| .NET release gate | `scripts/net_line_gate.py` on the restore output of `src/*`: per target framework, a package that ships to consumers (the license gate's walk) and ships one version per .NET release must not be newer than the framework. Microsoft.Extensions.Logging 11.0.0 in the `net10.0` dependencies fails it. Such a package is a `System.*`, `Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.Bcl.*`, `Microsoft.NETCore.*` or `Microsoft.Win32.*` package whose `.nuspec` repository is `dotnet/dotnet`, `dotnet/runtime`, `dotnet/aspnetcore` or `dotnet/extensions`. Build-only packages (PrivateAssets=all, such as SourceLink) are not checked |
+| .NET release gate | `scripts/net_line_gate.py` on the restore output of `src/*`: per target framework, a package that ships to consumers (the license gate's walk) and ships one version per .NET release must not be newer than the framework. Microsoft.Extensions.Logging 11.0.0 in the `net10.0` dependencies fails it. Such a package is a `System.*`, `Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.Bcl.*`, `Microsoft.NETCore.*` or `Microsoft.Win32.*` package whose `.nuspec` repository is `dotnet/dotnet`, `dotnet/runtime`, `dotnet/aspnetcore` or `dotnet/extensions`; a package whose `.nuspec` names no repository is not checked. Build-only packages (PrivateAssets=all, such as SourceLink) are not checked either |
 | README code samples | See below; `report` by default |
 
 #### README code samples
@@ -317,9 +318,9 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
 3. Run `family_lint.py`. It now reports a project whose target frameworks differ from the adapter's, and a README
    whose `.NET` badge or requirements line does not name every target framework (for example a badge that still says
    `.NET-10.0` next to `net10.0;net11.0`). Fix what it reports.
-4. The .NET release gate runs in `package-ci.yml` without any change in the repository. It fails when a package that
-   reaches consumers of a target framework comes from a newer .NET release; give that framework the version of its
-   own release in `Directory.Packages.props`.
+4. The .NET release gate runs in `package-ci.yml` without any change in the repository. It fails when a runtime,
+   ASP.NET Core or extensions package that reaches consumers of a target framework comes from a newer .NET release;
+   give that framework the version of its own release in `Directory.Packages.props`.
 
 ## Using `dependency-graph.yml`
 

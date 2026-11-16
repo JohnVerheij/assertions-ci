@@ -105,6 +105,17 @@ class ManifestTests(unittest.TestCase):
         shared = snap.manifest(data, ROOT)["resolved"]["pkg:nuget/Shared@1.0.0"]
         self.assertEqual((shared["relationship"], shared["scope"]), ("direct", "runtime"))
 
+    def test_runtime_keyed_graphs_are_read_per_framework(self):
+        # A restore with a runtime identifier keys each graph as net10.0/linux-x64; each framework reads its own.
+        data = assets("src/Lib/Lib.csproj", {}, {}, frameworks=("net9.0", "net10.0"))
+        data["targets"] = {"net9.0/linux-x64": {"Old/1.0.0": package()}, "net10.0/linux-x64": {"New/2.0.0": package()}}
+        data["project"]["frameworks"]["net9.0"]["dependencies"] = {"Old": {"target": "Package"}}
+        data["project"]["frameworks"]["net10.0"]["dependencies"] = {"New": {"target": "Package"}}
+        resolved = snap.manifest(data, ROOT)["resolved"]
+        self.assertEqual(sorted(resolved), ["pkg:nuget/New@2.0.0", "pkg:nuget/Old@1.0.0"])
+        self.assertEqual((resolved["pkg:nuget/New@2.0.0"]["relationship"], resolved["pkg:nuget/New@2.0.0"]["scope"]),
+                         ("direct", "runtime"))
+
     def test_package_that_is_indirect_in_every_framework_stays_indirect(self):
         targets = {
             "net9.0": {"Root/1.0.0": package("Shared"), "Shared/1.0.0": package("A"), "A/1.0.0": package()},

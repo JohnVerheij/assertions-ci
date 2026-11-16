@@ -21,7 +21,7 @@ import json
 import os
 import sys
 
-from license_gate import find_target, shipped_packages
+from license_gate import find_target, framework_targets, shipped_packages
 
 DETECTOR_NAME = "assertions-ci"
 DETECTOR_URL = "https://github.com/JohnVerheij/assertions-ci"
@@ -41,7 +41,7 @@ def resolved_packages(assets: dict, runtime_scope: bool) -> dict[str, dict]:
     runtime = shipped_packages(assets) if runtime_scope else set()
     resolved: dict[str, dict] = {}
     for alias, framework in assets["project"]["frameworks"].items():
-        targets = assets["targets"].get(alias) or next(iter(assets["targets"].values()))
+        targets = framework_targets(assets, alias) or next(iter(assets["targets"].values()))
         direct = {name.lower() for name, dep in framework.get("dependencies", {}).items() if dep.get("target") == "Package"}
         for key, entry in targets.items():
             if entry.get("type") != "package":
