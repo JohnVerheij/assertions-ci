@@ -81,10 +81,20 @@ def find_target(targets: dict, name: str) -> str | None:
     return None
 
 
+def framework_targets(assets: dict, alias: str) -> dict | None:
+    """The restore targets of one target framework: the key is the alias (net10.0), or the alias and a runtime
+    identifier (net10.0/win-x64) when the restore used one; None when there is neither."""
+    targets = assets["targets"]
+    if alias in targets:
+        return targets[alias]
+    return next((value for key, value in targets.items() if key.startswith(alias + "/")), None)
+
+
 def shipped_for(assets: dict, alias: str) -> set[str]:
-    """Keys like 'Name/Version' of every package that reaches a consumer of this project on one target framework."""
+    """Keys like 'Name/Version' of every package that reaches a consumer of this project on one target framework.
+    Without restore targets for the framework, the first targets of the file are walked."""
     framework = assets["project"]["frameworks"][alias]
-    targets = assets["targets"].get(alias) or next(iter(assets["targets"].values()))
+    targets = framework_targets(assets, alias) or next(iter(assets["targets"].values()))
     result: set[str] = set()
     queue = []
     for name, dep in framework.get("dependencies", {}).items():

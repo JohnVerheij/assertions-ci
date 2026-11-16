@@ -129,8 +129,49 @@ class CheckTests(Fixture):
         self.assertEqual((violations, checked), ([], 0))
 
     def test_package_without_a_nuspec_is_reported(self):
-        violations, missing, _ = gate.check(self.assets({"net10.0": [("System.Memory", "10.0.0", None)]}))
-        self.assertEqual((violations, missing), ([], ["System.Memory/10.0.0"]))
+        violations, problems, _ = gate.check(self.assets({"net10.0": [("System.Memory", "10.0.0", None)]}))
+        self.assertEqual(violations, [])
+        self.assertEqual(problems, ["no .nuspec found for System.Memory/10.0.0, so its .NET release cannot be checked."])
+
+    def test_unreadable_nuspec_is_reported(self):
+        document = self.assets({"net10.0": [("System.Memory", "10.0.0", DOTNET)]})
+        with open(os.path.join(self.packages, "system.memory", "10.0.0", "system.memory.nuspec"), "w",
+                  encoding="utf-8") as f:
+            f.write("not xml")
+        violations, problems, checked = gate.check(document)
+        self.assertEqual((violations, checked), ([], 0))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("the .nuspec of System.Memory/10.0.0 is not readable XML", problems[0])
+
+    def test_version_that_is_not_a_number_is_reported(self):
+        violations, problems, checked = gate.check(self.assets({"net10.0": [("System.Memory", "v10", DOTNET)]}))
+        self.assertEqual((violations, checked), ([], 0))
+        self.assertEqual(problems, ["System.Memory/v10: version v10 does not start with a number, so its .NET "
+                                    "release is unknown."])
+
+    def test_transitive_package_of_a_newer_release_is_a_violation(self):
+        document = self.assets({"net10.0": [("My.Dependency", "1.0.0", "https://github.com/me/dep"),
+                                            ("Microsoft.Extensions.Logging", "11.0.0", DOTNET)]})
+        del document["project"]["frameworks"]["net10.0"]["dependencies"]["Microsoft.Extensions.Logging"]
+        document["targets"]["net10.0"]["My.Dependency/1.0.0"]["dependencies"] = {"Microsoft.Extensions.Logging": "11.0.0"}
+        violations, _, checked = gate.check(document)
+        self.assertEqual(checked, 1)
+        self.assertIn("net10.0 ships Microsoft.Extensions.Logging 11.0.0", violations[0])
+
+    def test_targets_with_a_runtime_identifier_are_found(self):
+        document = self.assets({"net10.0": [("System.Memory", "11.0.0", DOTNET)]})
+        document["targets"] = {"net10.0/win-x64": document["targets"]["net10.0"]}
+        violations, problems, _ = gate.check(document)
+        self.assertEqual(problems, [])
+        self.assertEqual(len(violations), 1)
+
+    def test_framework_without_restore_targets_is_reported(self):
+        document = self.assets({"net10.0": [("System.Memory", "10.0.0", DOTNET)],
+                                "net11.0-windows": [("System.Memory", "11.0.0", DOTNET)]})
+        document["targets"]["net11.0-windows10.0.19041"] = document["targets"].pop("net11.0-windows")
+        violations, problems, checked = gate.check(document)
+        self.assertEqual((violations, checked), ([], 1))
+        self.assertEqual(problems, ["no restore targets for net11.0-windows (keys: net10.0, net11.0-windows10.0.19041)."])
 
 
 class MainTests(Fixture):
@@ -161,7 +202,7 @@ class MainTests(Fixture):
     def test_clean_repository_passes(self):
         code, out = self.run_main({"net10.0": [("System.Numerics.Tensors", "10.0.15", DOTNET)]})
         self.assertEqual(code, 0)
-        self.assertIn("Checked 1 shipped .NET package(s) against their target frameworks; 0 problem(s).", out)
+        self.assertIn("Checked 1 pair(s) of target framework and shipped .NET package; 0 problem(s).", out)
 
     def test_violation_and_missing_nuspec_fail_with_errors(self):
         code, out = self.run_main({"net10.0": [("System.Numerics.Tensors", "11.0.0", DOTNET),

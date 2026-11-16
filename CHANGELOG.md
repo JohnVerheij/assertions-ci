@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.6.0] - 2026-11-16: every .NET line consistent, from the projects to the shipped packages
 
-Minor release. The family targets every .NET version in support (`net10.0;net11.0` today), and four places drifted
-from that by hand. A repository adopts it with `family_sync.py --write` and the fixes the lint reports (see the README,
-"Adopting 1.6.0").
+Minor release. The family targets every .NET version in support (`net10.0;net11.0` today). The README badges, the
+copies of the conventions and the Renovate rules drifted from that by hand, and nothing checked the packages that ship.
+A repository adopts it with `family_sync.py --write` and the fixes the lint reports (see the README, "Adopting
+1.6.0").
 
 ### Added
 
@@ -26,18 +27,25 @@ from that by hand. A repository adopts it with `family_sync.py --write` and the 
   runtime, ASP.NET Core or extensions package by name whose `.nuspec` repository is `dotnet/dotnet` (where those
   packages are built since .NET 10), `dotnet/runtime`, `dotnet/aspnetcore` or `dotnet/extensions`. Build-only packages
   such as SourceLink do not reach consumers and are not checked. The nine package repositories pass it.
-- **`CONVENTIONS.md` is a family template.** The copies in the package repositories had two versions of the TFM policy
-  section (one named a Math dependency in the Grpc copy). The template has one, which also states the rules the lint
-  and the gate check.
+- **`CONVENTIONS.md` is a family template.** The copies in the package repositories had three versions of the TFM
+  policy section (the Grpc copy named a Math dependency). The template takes the newest one, adds back that a new
+  target framework makes a minor release, and states the rules the lint and the gate check.
 
 ### Changed
 
 - **Renovate: no major updates for packages that ship one version per .NET release** (`Microsoft.AspNetCore.*`,
   `Microsoft.Bcl.*`, `Microsoft.Extensions.*`, `System.Numerics.Tensors`). They waited for approval in the Dependency
   Dashboard, where approving one would move every target framework to the newest .NET release. A new major belongs to
-  a new target framework, added by hand. The SDK and SourceLink keep the approval.
+  a new target framework, added by hand. The SDK and SourceLink keep the approval. The .NET release gate checks every
+  runtime package that ships, not only these names.
 - `license_gate.py` shares its per-framework walk (`shipped_for`) and its `.nuspec` lookup (`find_nuspec`) with the
-  .NET release gate; what it checks is unchanged.
+  .NET release gate.
+
+### Fixed
+
+- **License gate: every target framework is walked in full.** A package version already walked for one framework was
+  not walked again for the next, so a dependency that only a later framework has (the same package version can depend
+  on other packages per framework) went unchecked.
 
 ## [1.5.0] - 2026-11-14: API comparison without attribute noise, code blocks that must close
 

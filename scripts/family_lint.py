@@ -182,11 +182,13 @@ TUNIT_PIN_RE = re.compile(r'<PackageVersion\s+Include="TUnit"\s+Version="([^"]+)
 FLOOR_RE = re.compile(r"TUnit (\d+\.\d+\.\d+) or later")
 VERSION_RE = re.compile(r"<Version>(\d+)\.(\d+)\.\d+[^<]*</Version>")
 VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
-# An unconditional <TargetFrameworks> or <TargetFramework> element (a conditional one has an attribute, so no match).
-FRAMEWORKS_RE = re.compile(r"<TargetFrameworks?>([^<]*)</TargetFrameworks?>")
+# An unconditional <TargetFrameworks> or <TargetFramework> element (a conditional one has an attribute, so no match;
+# commented-out elements are removed first).
+FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
+XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
 # The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
-NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-[0-9A-Fa-f]{6}\b")
+NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
 NET_MENTION_RE = re.compile(r"\.NET (\d+)\b")
 
 
@@ -310,11 +312,11 @@ def _security_issues(root: str, package: str) -> list[str]:
 
 
 def project_frameworks(path: str) -> 'list[str] | None':
-    """The target frameworks of a project file, in order; None when it declares none (it inherits them)."""
-    found = FRAMEWORKS_RE.search(_read(path))
-    if not found:
-        return None
-    return [name.strip() for name in found.group(1).split(";") if name.strip()]
+    """The target frameworks of a project file, in order; None when it declares none (it inherits them) or only an
+    empty element."""
+    found = FRAMEWORKS_RE.search(XML_COMMENT_RE.sub("", _read(path)))
+    names = [name.strip() for name in found.group(2).split(";") if name.strip()] if found else []
+    return names or None
 
 
 def _net_versions(frameworks: list[str]) -> list[str]:
@@ -346,7 +348,8 @@ def _readme_net_issues(name: str, text: str, versions: list[str], required: bool
     if not badges and required:
         out.append(f"{name}: no .NET badge (img.shields.io/badge/.NET-...) naming {wanted}")
     for badge in badges:
-        named = [part.strip() for part in urllib.parse.unquote(badge).split("|")]
+        # shields.io writes a space as %20 or _; the versions are separated by | (%7C).
+        named = [part.strip() for part in urllib.parse.unquote(badge).replace("_", " ").split("|")]
         if set(named) != set(versions):
             out.append(f"{name}: .NET badge names {' | '.join(named)}, the packages target {wanted}")
     majors = {version.split(".")[0] for version in versions}

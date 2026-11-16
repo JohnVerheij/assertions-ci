@@ -233,7 +233,8 @@ it has three family rules:
   `Microsoft.Extensions.*`, `System.Numerics.Tensors`): no major updates. Each target framework takes the version of
   its own .NET release (a conditional `ItemGroup` per framework in `Directory.Packages.props`), so a new major belongs
   to a new target framework, added by hand under the TFM policy, and never to an existing entry. Minor and patch
-  updates stay automatic within each line. The .NET release gate checks the same rule on what ships.
+  updates stay automatic within each line. The .NET release gate checks what ships, for every runtime package, not
+  only these names.
 - **The SDK and SourceLink** (`dotnet-sdk`, `Microsoft.SourceLink.GitHub`): a major update waits for approval in the
   Dependency Dashboard, because it comes with a new .NET release.
 
@@ -241,11 +242,11 @@ it has three family rules:
 
 `templates/package/` holds the files every package repository shares, at their path in the repository: the
 `.gitattributes` and `.gitignore`, `Directory.Build.props` and `Directory.Build.targets`, the community files,
-`CONVENTIONS.md` (the code conventions of the family), the docs-site files, the Renovate configuration, and the workflow callers. The callers are stored as
-`<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL) reads them as workflows, and
-`docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON; `family_sync.py` writes them
-without the suffix. This repository's own Renovate configuration adds the templates to
-its GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
+`CONVENTIONS.md` (the code conventions of the family), the docs-site files, the Renovate configuration, and the workflow
+callers. The callers are stored as `<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL)
+reads them as workflows, and `docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON;
+`family_sync.py` writes them without the suffix. This repository's own Renovate configuration adds the templates to its
+GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
 Placeholders:
 
 | Placeholder | Value |
@@ -311,8 +312,8 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
 ### Adopting 1.6.0 in a package repository
 
 1. Move the pins to the 1.6.0 commit (or take Renovate's digest pull request).
-2. Run `family_sync.py --write`. It writes `CONVENTIONS.md` from the template: the copies had two versions of the TFM
-   policy section, now one.
+2. Run `family_sync.py --write`. It writes `CONVENTIONS.md` from the template: the copies had three versions of the
+   TFM policy section, now one.
 3. Run `family_lint.py`. It now reports a project whose target frameworks differ from the adapter's, and a README
    whose `.NET` badge or requirements line does not name every target framework (for example a badge that still says
    `.NET-10.0` next to `net10.0;net11.0`). Fix what it reports.

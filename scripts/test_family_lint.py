@@ -437,6 +437,21 @@ class FrameworkTests(_Base):
                                              "</PropertyGroup></Project>")
         self.assertTrue(_matches(self.repo(), "tests/A/A.csproj: target frameworks net9.0 differ"))
 
+    def test_empty_commented_or_mismatched_elements_count_as_none(self):
+        _write(self.dir, "tests/A/A.csproj", "<Project><PropertyGroup><TargetFrameworks></TargetFrameworks>"
+                                             "</PropertyGroup></Project>")
+        _write(self.dir, "tests/B/B.csproj", "<Project><!-- <TargetFrameworks>net8.0</TargetFrameworks> -->"
+                                             "<PropertyGroup /></Project>")
+        _write(self.dir, "tests/C/C.csproj", "<Project><PropertyGroup><TargetFramework>net8.0</TargetFrameworks>"
+                                             "</PropertyGroup></Project>")
+        self.assertEqual(self.repo(), [])
+
+    def test_badge_with_a_named_color_or_underscores_is_read(self):
+        self.assertEqual(self.repo(badge="10.0_%7C_11.0"), [])
+        _write(self.dir, "src/GrpcAssertions/README.md", "![.NET](https://img.shields.io/badge/.NET-10.0-blue)")
+        self.assertEqual(self.repo(), ["src/GrpcAssertions/README.md: .NET badge names 10.0, "
+                                       "the packages target 10.0 | 11.0"])
+
     def test_frameworks_without_a_net_version_check_only_the_projects(self):
         self.assertEqual(self.repo(frameworks="netstandard2.0", badge=None, requirements="TUnit 1.83.0 or later"), [])
 

@@ -83,7 +83,7 @@
       "platformAutomerge": true
     },
     {
-      "description": "Packages that ship one version per .NET release. A package targets every supported .NET version, and each target framework takes the version of its own .NET release (conditional ItemGroups in Directory.Packages.props), so a new major belongs to a new target framework, added by hand under the TFM policy, never a bump of an existing entry: in the net10.0 group it would hand .NET 11 packages to .NET 10 consumers. Their major updates are therefore off, not waiting in the Dependency Dashboard; minor and patch updates stay automatic within each line. Package CI checks the same rule on what actually ships.",
+      "description": "Packages that ship one version per .NET release. A package targets every supported .NET version, and each target framework takes the version of its own .NET release (conditional ItemGroups in Directory.Packages.props), so a new major belongs to a new target framework, added by hand under the TFM policy, never a bump of an existing entry: in the net10.0 group it would hand .NET 11 packages to .NET 10 consumers. Their major updates are therefore off, not waiting in the Dependency Dashboard; minor and patch updates stay automatic within each line. Package CI checks what actually ships, for every runtime package, not only these names.",
       "matchPackageNames": [
         "Microsoft.AspNetCore.*",
         "Microsoft.Bcl.*",
