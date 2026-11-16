@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Pins the XML documentation fixes (#7687, #7692) and the generated-code header (#5796): the generated
+         extension methods must compile without CS1591 and the XML file must inherit the documented summaries. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Exact versions on purpose: Renovate proposes each new TUnit release as a pull request, and this project
+         shows whether a fix we contributed has regressed. All TUnit packages move together. -->
+    <PackageReference Include="TUnit" Version="1.85.7" />
+    <PackageReference Include="TUnit.Mocks" Version="1.85.7" />
+    <PackageReference Include="TUnit.FsCheck" Version="1.85.7" />
+  </ItemGroup>
+
+</Project>

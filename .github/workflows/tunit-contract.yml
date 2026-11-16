@@ -1,0 +1,47 @@
+name: TUnit contract
+
+# Runs tests/TUnitContract: one test per upstream TUnit fix we contributed. A Renovate pull request that bumps
+# the exact TUnit version in that project shows here whether a fix has regressed.
+# It runs on every pull request, without a paths filter, so it can be a required check: Renovate then cannot merge a
+# TUnit release that breaks the contract.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tunit-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: TUnit contract (${{ matrix.framework }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: [net10.0, net11.0]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        # Both SDKs: the newest one builds, and each target framework needs its own runtime to run the tests.
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+
+      - name: Build and run
+        # The project is an executable (Microsoft.Testing.Platform); the build fails on any warning, so a compile-time
+        # regression in generated code fails here, a runtime regression fails the test run.
+        run: dotnet run --project tests/TUnitContract --framework ${{ matrix.framework }} --configuration Release
