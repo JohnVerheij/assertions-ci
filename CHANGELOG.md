@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-17: TUnit contract tests, every requirements line checked
+
+Minor release. A test per upstream TUnit fix the family contributed now runs on every pull request, so the pull
+request of a TUnit release that breaks one of them fails, and the family lint checks every README requirements line. A
+package repository adopts it by moving its pins; nothing else changes, and the nine package repositories pass the
+new lint check.
+
 ### Added
 
 - **TUnit contract tests.** New project `tests/TUnitContract/` with one test file per upstream TUnit fix the family
@@ -307,6 +314,7 @@ Linux and the Codecov OIDC upload.
   required status checks.
 
 [unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...HEAD
+[1.7.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0
