@@ -30,6 +30,14 @@
       "schedule": [
         "before 4am on monday"
       ]
+    },
+    {
+      "description": "The TUnit contract tests (tests/TUnitContract) also reference TUnit.Mocks and TUnit.FsCheck. They release in lockstep with TUnit, so they join the family preset's TUnit group: one pull request per TUnit release.",
+      "matchPackageNames": [
+        "TUnit.Mocks",
+        "TUnit.FsCheck"
+      ],
+      "groupName": "TUnit"
     }
   ]
 }

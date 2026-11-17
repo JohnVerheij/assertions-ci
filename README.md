@@ -32,6 +32,7 @@ build stage of a release, and a composite action for the publish stage.
 | `.github/workflows/zizmor.yml` | Security audit of the workflows, including the rendered workflow templates (blocks on findings) |
 | `.github/workflows/codeql.yml` | CodeQL analysis of the workflows (`actions` language) |
 | `.github/workflows/scripts.yml` | Runs the script unit tests with coverage and fails below 90% line and branch coverage (coverage.py, hash-pinned in `scripts/requirements-ci.txt`) |
+| `.github/workflows/tunit-contract.yml`, `tests/TUnitContract/` | Builds and runs the TUnit contract tests on `net10.0` and `net11.0` for changes to that project and for manual runs; one test per upstream TUnit fix the family depends on (see [The TUnit contract tests](#the-tunit-contract-tests)) |
 | `.github/workflows/renovate-config.yml` | Validates the family preset, the repository template that extends it and this repository's Renovate configuration with Renovate's own validator (`--strict`; the preset and the template as repository configuration, `--no-global`) |
 | `.github/workflows/spelling.yml` | typos with the family dictionary on this repository, so a dictionary change is proven here first |
 | `.github/workflows/scorecard.yml` | OpenSSF Scorecard supply-chain analysis |
@@ -210,6 +211,35 @@ Two workflows stay in each repository on purpose:
   workflows; a rejected publish would silently drop the score.
 
 The family templates keep both identical across the repositories.
+
+## The TUnit contract tests
+
+`tests/TUnitContract/` is a small TUnit project with one test file per upstream fix that the family contributed to TUnit
+or depends on. It references `TUnit`, `TUnit.Mocks` and `TUnit.FsCheck` at one exact version, so Renovate proposes each
+new TUnit release as a pull request, and `tunit-contract.yml` shows on that pull request whether a fix has regressed.
+This repository's Renovate configuration puts `TUnit.Mocks` and `TUnit.FsCheck` in the TUnit group, so one pull request
+moves all three. The workflow runs on every pull request, so its two checks (`TUnit contract (net10.0)` and
+`TUnit contract (net11.0)`) can be required: Renovate then cannot merge a TUnit release that breaks the contract.
+Run it locally with `dotnet run --project tests/TUnitContract -f net10.0` (or `net11.0`). The project treats warnings as
+errors, so a regression in generated code fails the build; a runtime regression fails the test run.
+
+| Test file | Pins | How |
+| --- | --- | --- |
+| `Pr5631_MockObsoleteTests.cs` | #5631: mocks of types with `[Obsolete]` members build without warnings | Compile time |
+| `Pr5758_FsCheckCancellationTokenTests.cs` | #5758: FsCheck properties receive the test's `CancellationToken` | Runtime |
+| `Pr5796_GeneratedHeaderTests.cs` | #5796: generated assertion code carries the auto-generated header, so CS1591 skips it | Compile time |
+| `Pr5919_ValueTypeDefaultParameterTests.cs` | #5919: a value-type parameter default is emitted as `default` | Compile time and runtime |
+| `Pr5920_TaskBoolEmitTests.cs` | #5920: `Task<bool>` assertions are emitted without an extra parenthesis | Compile time and runtime |
+| `Pr5921_DualGenericEmitTests.cs` | #5921: an extension with its own type parameter gets one merged generic list | Compile time and runtime |
+| `Pr5935_CovariantGenericMethodTests.cs` | #5935: a generic `[GenerateAssertion]` method on a non-sealed receiver binds with explicit type arguments | Compile time and runtime |
+| `Pr5938_WaitsForCancellationTokenTests.cs` | #5938: `WaitsFor` and `Eventually` take a `CancellationToken` | Compile time and runtime |
+| `Pr5940_ParamsCallerExpressionTests.cs` | #5940: `[CallerArgumentExpression]` is emitted before `params` | Compile time and runtime |
+| `Pr7687_GenerateAssertionXmlDocsTests.cs` | #7687: generated extensions inherit the XML documentation of `[GenerateAssertion]` methods | XML documentation file |
+| `Pr7692_AssertionExtensionXmlDocsTests.cs` | #7692: generated extensions inherit the XML documentation of `[AssertionExtension]` classes and their constructors | XML documentation file |
+
+Not covered: #5652 (`FlowSuppressingHostedService` forwards disposal). The type is `internal` to `TUnit.AspNetCore.Core`,
+so only its own test project can reach it, and observing the fix through the public surface needs an ASP.NET Core
+application entry point and a test host, which is more than a contract test should carry.
 
 ## The Renovate preset
 
