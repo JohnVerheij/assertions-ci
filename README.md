@@ -168,20 +168,23 @@ block that no fence closes fails the step in both modes.
 The compiler reports errors inside method bodies only once every declaration compiles, so fixing samples comes in
 waves: build again after each round until the list is empty.
 
-To build the samples locally, pack with a version that no release has, from the repository root, and give the script
-that version:
+To build the samples locally, pack with a new version that no release has, from the repository root, and give the
+script that version:
 
 ```sh
-dotnet pack -c Release -o artifacts -p:Version=99.0.0-local
-python3 <assertions-ci>/scripts/readme_samples.py <Package> 99.0.0-local "net10.0;net11.0"
+VERSION=99.0.0-local.$(date +%Y%m%d%H%M%S)
+dotnet pack -c Release -o artifacts -p:Version=$VERSION
+python3 <assertions-ci>/scripts/readme_samples.py <Package> $VERSION "net10.0;net11.0"
 dotnet restore tests/.readme-samples/ReadmeSamples.csproj --force-evaluate
 dotnet build tests/.readme-samples/ReadmeSamples.csproj --no-restore
 ```
 
-The restore takes the packed packages from `artifacts` through the smoke test's NuGet.config. Never restore a local
-pack under a released version: the build stays in the global packages folder under that version, and every other
-repository on the machine then restores it instead of the package on nuget.org. Its lock file records the local
-build's hash, and its CI fails with NU1403.
+The restore takes the packed packages from `artifacts` through the smoke test's NuGet.config. Each pack gets its own
+version because NuGet keeps a package in the global packages folder by name and version: a second pack under the same
+version would be restored from there, the build of the earlier pack. Never restore a local pack under a released
+version: the build stays in the global packages folder under that version, and every other repository on the machine
+then restores it instead of the package on nuget.org. Its lock file records the local build's hash, and its CI fails
+with NU1403.
 
 The conventions:
 - A fenced block whose info string starts with `csharp`, `cs` or `c#` is a sample. ` ```csharp no-compile ` opts a
