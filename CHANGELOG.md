@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request and push to `main`, so it can be a required check: Renovate then cannot merge a TUnit release that breaks
   the contract.
 
+### Fixed
+
+- **Family lint: every requirements line is checked.** The .NET versions were compared only on a README line with a
+  TUnit minimum (`TUnit X.Y.Z or later`), so a core README's `**Requirements:** .NET 9` passed next to `net10.0;net11.0`.
+  A line with the `**Requirements:**` label is now checked too. The nine package repositories pass it.
+
 ## [1.6.0] - 2026-11-16: every .NET line consistent, from the projects to the shipped packages
 
 Minor release. The family targets every .NET version in support (`net10.0;net11.0` today). The README badges, the

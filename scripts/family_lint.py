@@ -180,6 +180,8 @@ SPELLING_SKIP = re.compile(
 
 TUNIT_PIN_RE = re.compile(r'<PackageVersion\s+Include="TUnit"\s+Version="([^"]+)"')
 FLOOR_RE = re.compile(r"TUnit (\d+\.\d+\.\d+) or later")
+# A README line that states requirements: the bold label, or the TUnit minimum of the adapter.
+REQUIREMENTS_RE = re.compile(r"\*\*Requirements:\*\*")
 VERSION_RE = re.compile(r"<Version>(\d+)\.(\d+)\.\d+[^<]*</Version>")
 VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # An unconditional <TargetFrameworks> or <TargetFramework> element (a conditional one has an attribute, so no match;
@@ -354,7 +356,7 @@ def _readme_net_issues(name: str, text: str, versions: list[str], required: bool
             out.append(f"{name}: .NET badge names {' | '.join(named)}, the packages target {wanted}")
     majors = {version.split(".")[0] for version in versions}
     for line in text.splitlines():
-        if not FLOOR_RE.search(line):
+        if not (FLOOR_RE.search(line) or REQUIREMENTS_RE.search(line)):
             continue
         mentioned = set(NET_MENTION_RE.findall(line))
         if not mentioned:
