@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-17: TUnit contract tests, every requirements line checked
+
+Minor release. A test per upstream TUnit fix the family contributed now runs on every pull request, so the pull
+request of a TUnit release that breaks one of them fails, and the family lint checks every README requirements line. A
+package repository adopts it by moving its pins; nothing else changes, and the nine package repositories pass the
+new lint check.
+
 ### Added
 
 - **TUnit contract tests.** New project `tests/TUnitContract/` with one test file per upstream TUnit fix the family
-  contributed or depends on (#5631, #5758, #5796, #5919, #5920, #5921, #5935, #5938, #5940, #7687, #7692), built with
-  warnings as errors on `net10.0` and `net11.0`. The `TUnit` reference is an exact version, so each new TUnit release
-  arrives as a Renovate pull request and the contract shows whether a fix has regressed. #5652 is left out: its type
-  is internal and needs an ASP.NET Core test host.
+  contributed or depends on (#5631, #5758, #5796, #5919, #5920, #5921, #5935, #5938, #5940, #7687, #7692, #7788,
+  #7793), built with warnings as errors on `net10.0` and `net11.0`. The `TUnit` reference is an exact version (1.86.0,
+  the first with #7788 and #7793), so each new TUnit release arrives as a Renovate pull request and the contract shows
+  whether a fix has regressed. #5652 is left out: its type is internal and needs an ASP.NET Core test host.
 - **`tunit-contract.yml`.** New workflow that builds and runs the contract tests on both frameworks on every pull
   request and push to `main`, so it can be a required check: Renovate then cannot merge a TUnit release that breaks
   the contract.
@@ -306,7 +313,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.3.0...v1.4.0

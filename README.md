@@ -32,7 +32,7 @@ build stage of a release, and a composite action for the publish stage.
 | `.github/workflows/zizmor.yml` | Security audit of the workflows, including the rendered workflow templates (blocks on findings) |
 | `.github/workflows/codeql.yml` | CodeQL analysis of the workflows (`actions` language) |
 | `.github/workflows/scripts.yml` | Runs the script unit tests with coverage and fails below 90% line and branch coverage (coverage.py, hash-pinned in `scripts/requirements-ci.txt`) |
-| `.github/workflows/tunit-contract.yml`, `tests/TUnitContract/` | Builds and runs the TUnit contract tests on `net10.0` and `net11.0` for changes to that project and for manual runs; one test per upstream TUnit fix the family depends on (see [The TUnit contract tests](#the-tunit-contract-tests)) |
+| `.github/workflows/tunit-contract.yml`, `tests/TUnitContract/` | Builds and runs the TUnit contract tests on `net10.0` and `net11.0` for every pull request, every push to `main` and manual runs; one test file per upstream TUnit fix the family depends on (see [The TUnit contract tests](#the-tunit-contract-tests)) |
 | `.github/workflows/renovate-config.yml` | Validates the family preset, the repository template that extends it and this repository's Renovate configuration with Renovate's own validator (`--strict`; the preset and the template as repository configuration, `--no-global`) |
 | `.github/workflows/spelling.yml` | typos with the family dictionary on this repository, so a dictionary change is proven here first |
 | `.github/workflows/scorecard.yml` | OpenSSF Scorecard supply-chain analysis |
@@ -237,6 +237,8 @@ errors, so a regression in generated code fails the build; a runtime regression 
 | `Pr5940_ParamsCallerExpressionTests.cs` | #5940: `[CallerArgumentExpression]` is emitted before `params` | Compile time and runtime |
 | `Pr7687_GenerateAssertionXmlDocsTests.cs` | #7687: generated extensions inherit the XML documentation of `[GenerateAssertion]` methods | XML documentation file |
 | `Pr7692_AssertionExtensionXmlDocsTests.cs` | #7692: generated extensions inherit the XML documentation of `[AssertionExtension]` classes and their constructors | XML documentation file |
+| `Pr7788_BecauseKeepsTheValueTests.cs` | #7788: awaiting a chain that ends in `.Because(...)` still gives the value of `HasSingleItem`, `Contains(predicate)`, `IsNotNull` and generated `AssertionResult<T>` assertions | Compile time and runtime |
+| `Pr7793_ValueTypeAssertionResultTests.cs` | #7793: a `[GenerateAssertion]` method that returns `AssertionResult<T>` of a value type compiles, and awaiting it gives `T` | Compile time and runtime |
 
 Not covered: #5652 (`FlowSuppressingHostedService` forwards disposal). The type is `internal` to `TUnit.AspNetCore.Core`,
 so only its own test project can reach it, and observing the fix through the public surface needs an ASP.NET Core
