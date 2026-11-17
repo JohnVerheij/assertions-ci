@@ -111,9 +111,10 @@ version's SDK for its runtime, and `global.json` keeps selecting the pinned one.
 .NET 11 SDK, a repository adds `net11.0` next to `net10.0` by changing its projects only. A test project must target
 `netX.Y` frameworks only.
 
-Every project of a repository lists the target frameworks of the adapter project, and the `.NET` badge and the
-`TUnit X.Y.Z or later` requirements line of every README name exactly those .NET versions (the root and adapter READMEs
-must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the lint.
+Every project of a repository lists the target frameworks of the adapter project, and the `.NET` badge and every
+requirements line of every README (a line with the `**Requirements:**` label, a line that starts with a plain
+`Requirements:`, or a line with `TUnit X.Y.Z or later`) name
+exactly those .NET versions (the root and adapter READMEs must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the lint.
 Per framework, the .NET release gate below checks that no shipped runtime, ASP.NET Core or extensions package comes
 from a newer .NET release.
 

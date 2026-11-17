@@ -490,6 +490,28 @@ class FrameworkTests(_Base):
         _write(self.dir, "src/GrpcAssertions/README.md", "Targets .NET 9; the adapter needs TUnit 1.83.0 or later.")
         self.assertTrue(_matches(self.repo(), "src/GrpcAssertions/README.md: the requirements line names .NET 9"))
 
+    def test_requirements_label_without_a_tunit_minimum_is_checked(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "**Requirements:** .NET 9. No dependencies beyond the BCL.")
+        self.assertEqual(self.repo(), ["src/GrpcAssertions/README.md: the requirements line names .NET 9, "
+                                       "the packages target .NET 10, 11"])
+
+    def test_requirements_label_naming_every_version_is_fine(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "**Requirements:** .NET 10 or .NET 11. No dependencies.")
+        self.assertEqual(self.repo(), [])
+
+    def test_plain_requirements_label_at_line_start_is_checked(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "Requirements: .NET 9.\n\n- Requirements: .NET 9 too.")
+        self.assertEqual(self.repo(), ["src/GrpcAssertions/README.md: the requirements line names .NET 9, "
+                                       "the packages target .NET 10, 11"] * 2)
+
+    def test_requirements_word_inside_a_sentence_is_not_a_requirements_line(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "Older tools had other Requirements: .NET 9 among them.")
+        self.assertEqual(self.repo(), [])
+
+    def test_optional_requirements_label_without_net_version_is_fine(self):
+        _write(self.dir, "src/GrpcAssertions/README.md", "**Requirements:** no dependencies beyond the BCL.")
+        self.assertEqual(self.repo(), [])
+
     def test_missing_readme_is_left_to_the_minimum_check(self):
         self.repo()
         os.remove(os.path.join(self.dir, "README.md"))
