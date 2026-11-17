@@ -168,6 +168,21 @@ block that no fence closes fails the step in both modes.
 The compiler reports errors inside method bodies only once every declaration compiles, so fixing samples comes in
 waves: build again after each round until the list is empty.
 
+To build the samples locally, pack with a version that no release has, from the repository root, and give the script
+that version:
+
+```sh
+dotnet pack -c Release -o artifacts -p:Version=99.0.0-local
+python3 <assertions-ci>/scripts/readme_samples.py <Package> 99.0.0-local "net10.0;net11.0"
+dotnet restore tests/.readme-samples/ReadmeSamples.csproj --force-evaluate
+dotnet build tests/.readme-samples/ReadmeSamples.csproj --no-restore
+```
+
+The restore takes the packed packages from `artifacts` through the smoke test's NuGet.config. Never restore a local
+pack under a released version: the build stays in the global packages folder under that version, and every other
+repository on the machine then restores it instead of the package on nuget.org. Its lock file records the local
+build's hash, and its CI fails with NU1403.
+
 The conventions:
 - A fenced block whose info string starts with `csharp`, `cs` or `c#` is a sample. ` ```csharp no-compile ` opts a
   block out: pseudo code, a deliberately wrong example, a sample of another package. A block inside a block quote
@@ -326,7 +341,8 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
    A repository that allows only its own, GitHub's and Marketplace-verified actions refuses to start the lint
    workflow otherwise (`startup_failure`: "The action crate-ci/typos@... is not allowed"). Then fix what typos
    reports. A word that is correct in the family goes into `typos/family.toml` here, for all repositories.
-6. Build the README samples locally (the step's commands, after a pack) and fix the samples or add
+6. Build the README samples locally (see [README code samples](#readme-code-samples): pack with a version that no
+   release has) and fix the samples or add
    `tests/ReadmeSamples.Prelude.cs`; mark what cannot compile `no-compile`. When every sample compiles, set
    `readme-samples: enforce` in `ci.yml` and `release.yml`.
 7. To target .NET 11 next to .NET 10, see [Target frameworks](#target-frameworks).
