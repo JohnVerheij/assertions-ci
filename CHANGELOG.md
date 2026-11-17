@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Family lint: every requirements line is checked.** The .NET versions were compared only on a README line with a
   TUnit minimum (`TUnit X.Y.Z or later`), so a core README's `**Requirements:** .NET 9` passed next to `net10.0;net11.0`.
-  A line with the `**Requirements:**` label is now checked too. The nine package repositories pass it.
+  A line with the `**Requirements:**` label, or one that starts with a plain `Requirements:`, is now checked too. The
+  nine package repositories pass it.
 
 ## [1.6.0] - 2026-11-16: every .NET line consistent, from the projects to the shipped packages
 

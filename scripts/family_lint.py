@@ -180,8 +180,9 @@ SPELLING_SKIP = re.compile(
 
 TUNIT_PIN_RE = re.compile(r'<PackageVersion\s+Include="TUnit"\s+Version="([^"]+)"')
 FLOOR_RE = re.compile(r"TUnit (\d+\.\d+\.\d+) or later")
-# A README line that states requirements: the bold label, or the TUnit minimum of the adapter.
-REQUIREMENTS_RE = re.compile(r"\*\*Requirements:\*\*")
+# A README line that states requirements: the bold label anywhere, the plain label at the start of a line (after a
+# list or quote marker), or the TUnit minimum of the adapter.
+REQUIREMENTS_RE = re.compile(r"\*\*Requirements:\*\*|^\s*(?:[-*+>]\s+)*Requirements:")
 VERSION_RE = re.compile(r"<Version>(\d+)\.(\d+)\.\d+[^<]*</Version>")
 VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # An unconditional <TargetFrameworks> or <TargetFramework> element (a conditional one has an attribute, so no match;
