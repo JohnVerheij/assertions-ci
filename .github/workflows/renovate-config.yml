@@ -31,7 +31,7 @@ jobs:
         # Renovate's own validator, without arguments: it finds .github/renovate.json and checks it as a repository
         # configuration. --strict also fails on a configuration that needs a migration. The image is pinned by
         # digest; Renovate updates it.
-        uses: docker://ghcr.io/renovatebot/renovate:44.238.0@sha256:9f3b520cdf749cf43164e7d809b37001b2f75f4a08b2a78d25a98bfb0abdd7bf
+        uses: docker://ghcr.io/renovatebot/renovate:44.251.0@sha256:64adaabe8ee3e34820c2b044b5f87e281aa278bf53e5d76df2ce800f9cc9407a
         with:
           entrypoint: renovate-config-validator
           args: --strict
@@ -39,7 +39,7 @@ jobs:
       - name: Validate the family preset and the repository template
         # Files named on the command line count as global (self-hosted) configuration, where options such as
         # autodiscover are valid; --no-global checks them as repository configuration, which is what they are.
-        uses: docker://ghcr.io/renovatebot/renovate:44.238.0@sha256:9f3b520cdf749cf43164e7d809b37001b2f75f4a08b2a78d25a98bfb0abdd7bf
+        uses: docker://ghcr.io/renovatebot/renovate:44.251.0@sha256:64adaabe8ee3e34820c2b044b5f87e281aa278bf53e5d76df2ce800f9cc9407a
         with:
           entrypoint: renovate-config-validator
           args: --strict --no-global renovate/family.json templates/package/.github/renovate.json
