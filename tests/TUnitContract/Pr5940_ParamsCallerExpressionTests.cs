@@ -1,10 +1,12 @@
 using TUnit.Assertions.Attributes;
+using TUnit.Assertions.Exceptions;
 
 namespace TUnitContract;
 
 // Upstream #5940: [CallerArgumentExpression] parameters are emitted before a params parameter in the generated
 // extension (otherwise CS0231). Compile-time: the generated methods only compile with the fix. Runtime: the params
-// array is passed by name, because the caller-expression parameters now sit in front of it.
+// array is passed by name, because the caller-expression parameters now sit in front of it, and each check passes only
+// when the supplied elements reach the method (an empty or missing array fails it).
 internal sealed class Pr5940_ParamsCallerExpressionTests
 {
     private static readonly int Five = 5;
@@ -13,7 +15,7 @@ internal sealed class Pr5940_ParamsCallerExpressionTests
     [Test]
     public async Task Required_Parameter_Before_Params()
     {
-        await Assert.That(Text).ContractContainsAny("a", candidates: ["x", "y"]);
+        await Assert.That(Text).ContractContainsAny("a", candidates: ["x", "b"]);
     }
 
     [Test]
@@ -23,15 +25,22 @@ internal sealed class Pr5940_ParamsCallerExpressionTests
     }
 
     [Test]
+    public async Task Params_Reach_The_Method()
+    {
+        await Assert.That(async () => await Assert.That(Five).ContractIsBetweenExcluding(1, 10, excluded: [5]))
+            .Throws<AssertionException>();
+    }
+
+    [Test]
     public async Task Optional_Parameter_Before_Params()
     {
-        await Assert.That(Text).ContractMeetsLength(1, suffixes: ["x"]);
+        await Assert.That(Text).ContractMeetsLength(1, suffixes: ["x", "c"]);
     }
 
     [Test]
     public async Task Generic_Parameter_Before_Generic_Params()
     {
-        await Assert.That(Five).ContractIsOneOfWithDefault(1, alternatives: [2, 3]);
+        await Assert.That(Five).ContractIsOneOfWithDefault(1, alternatives: [2, 5]);
     }
 
     [Test]
@@ -51,7 +60,7 @@ public static partial class Pr5940ParamsAssertions
     /// <returns>Whether the check passes.</returns>
     [GenerateAssertion]
     public static bool ContractContainsAny(this string value, string label, params string[] candidates)
-        => candidates.Length > 0 && value.Length >= label.Length;
+        => value.StartsWith(label, StringComparison.Ordinal) && candidates.Any(c => value.Contains(c, StringComparison.Ordinal));
 
     /// <summary>Two required parameters then params.</summary>
     /// <param name="value">The value under test.</param>
@@ -70,7 +79,7 @@ public static partial class Pr5940ParamsAssertions
     /// <returns>Whether the check passes.</returns>
     [GenerateAssertion]
     public static bool ContractMeetsLength(this string value, int minLength = 1, params string[] suffixes)
-        => value.Length >= minLength && suffixes.Length >= 0;
+        => value.Length >= minLength && suffixes.Any(s => value.EndsWith(s, StringComparison.Ordinal));
 
     /// <summary>Generic parameter then generic params.</summary>
     /// <typeparam name="T">The value type.</typeparam>
@@ -80,7 +89,7 @@ public static partial class Pr5940ParamsAssertions
     /// <returns>Whether the check passes.</returns>
     [GenerateAssertion]
     public static bool ContractIsOneOfWithDefault<T>(this T value, T fallback, params T[] alternatives)
-        => alternatives.Length >= 0 || EqualityComparer<T>.Default.Equals(fallback, value);
+        => EqualityComparer<T>.Default.Equals(fallback, value) || alternatives.Contains(value);
 
     /// <summary>Params only.</summary>
     /// <param name="value">The value under test.</param>
@@ -88,5 +97,5 @@ public static partial class Pr5940ParamsAssertions
     /// <returns>Whether the check passes.</returns>
     [GenerateAssertion]
     public static bool ContractContainsExactly(this string value, params string[] required)
-        => required.Length >= 0 && value.Length >= 0;
+        => required.Length > 0 && required.All(r => value.Contains(r, StringComparison.Ordinal));
 }
