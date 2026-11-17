@@ -10,10 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **TUnit contract tests.** New project `tests/TUnitContract/` with one test file per upstream TUnit fix the family
-  contributed or depends on (#5631, #5758, #5796, #5919, #5920, #5921, #5935, #5938, #5940, #7687, #7692), built with
-  warnings as errors on `net10.0` and `net11.0`. The `TUnit` reference is an exact version, so each new TUnit release
-  arrives as a Renovate pull request and the contract shows whether a fix has regressed. #5652 is left out: its type
-  is internal and needs an ASP.NET Core test host.
+  contributed or depends on (#5631, #5758, #5796, #5919, #5920, #5921, #5935, #5938, #5940, #7687, #7692, #7788,
+  #7793), built with warnings as errors on `net10.0` and `net11.0`. The `TUnit` reference is an exact version (1.86.0,
+  the first with #7788 and #7793), so each new TUnit release arrives as a Renovate pull request and the contract shows
+  whether a fix has regressed. #5652 is left out: its type is internal and needs an ASP.NET Core test host.
 - **`tunit-contract.yml`.** New workflow that builds and runs the contract tests on both frameworks on every pull
   request and push to `main`, so it can be a required check: Renovate then cannot merge a TUnit release that breaks
   the contract.
