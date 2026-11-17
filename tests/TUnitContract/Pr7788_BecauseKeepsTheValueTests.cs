@@ -52,7 +52,7 @@ internal sealed class Pr7788_BecauseKeepsTheValueTests
                 await Assert.That("   ").ContractTrimsToContent().Because("the value has content"))
             .Throws<AssertionException>();
 
-        await Assert.That(exception!.Message).Contains("the value has content");
+        await Assert.That(exception!.Message).Contains(", because the value has content");
     }
 }
 
