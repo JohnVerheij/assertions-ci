@@ -294,16 +294,17 @@ it has three family rules:
 
 `templates/package/` holds the files every package repository shares, at their path in the repository: the
 `.gitattributes` and `.gitignore`, `Directory.Build.props` and `Directory.Build.targets`, the community files,
-`CONVENTIONS.md` (the code conventions of the family), the docs-site files, the Renovate configuration, and the workflow
-callers. The callers are stored as `<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL)
-reads them as workflows, and `docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON;
-`family_sync.py` writes them without the suffix. This repository's own Renovate configuration adds the templates to its
+`CONVENTIONS.md` (the code conventions of the family), the docs-site files, the Renovate configuration, the workflow
+callers, and the smoke test's `NuGet.config` (at `tests/{{Package}}.TUnit.SmokeTest/`). The callers are stored as
+`<name>.yml.template`, so no tool in this repository (actionlint, zizmor, CodeQL) reads them as workflows, and
+`docs/docfx.json` as `docfx.json.template`, because its `{{core}}` line is not valid JSON; `family_sync.py` writes them
+without the suffix. This repository's own Renovate configuration adds the templates to its
 GitHub Actions files, so their action pins stay current, and leaves the `{{assertions-ci}}` placeholder alone.
 Placeholders:
 
 | Placeholder | Value |
 | --- | --- |
-| `{{Package}}` | The package name without `.TUnit`, from `src/<Package>.TUnit/` |
+| `{{Package}}` | The package name without `.TUnit`, from `src/<Package>.TUnit/`; also in a template's path |
 | `{{domain}}` | The documentation domain, the lowercase package name plus `.dev` |
 | `{{assertions-ci}}` | The assertions-ci pin of the repository's own `ci.yml` (`<sha> # vX.Y.Z`), so every caller uses the same commit |
 | `{{core}}` at the start of a line | The line is kept only when the repository has a core package (`src/<Package>/`) |
@@ -373,6 +374,15 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
 4. The .NET release gate runs in `package-ci.yml` without any change in the repository. It fails when a runtime,
    ASP.NET Core or extensions package that reaches consumers of a target framework comes from a newer .NET release;
    give that framework the version of its own release in `Directory.Packages.props`.
+
+### Adopting 1.8.0 in a package repository
+
+1. Move the pins to the 1.8.0 commit (or take Renovate's digest pull request).
+2. Run `family_sync.py --write`. It writes `tests/<Package>.TUnit.SmokeTest/NuGet.config` from the template. The
+   copies told a developer to run "the same pack command before restore": a pack without a version, so under the
+   version in the project file, which is a release's. The template packs with a new `99.0.0-local` version each time
+   and gives the smoke test that version (see [README code samples](#readme-code-samples) for why). The source
+   mapping is unchanged.
 
 ## Using `dependency-graph.yml`
 

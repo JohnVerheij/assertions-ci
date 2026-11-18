@@ -5,7 +5,8 @@ Usage: family_sync.py [--write] [<repo root>]  (default: the current directory)
 The templates live in templates/package/ of assertions-ci, with the repository's path; a template may end in
 .template, which the written file drops (the workflow callers do, so no tool in assertions-ci reads them as workflows,
 and so does docs/docfx.json, whose {{core}} line is not valid JSON). Placeholders:
-- {{Package}}: the package name without .TUnit (from src/<Package>.TUnit/), {{domain}}: its documentation domain;
+- {{Package}}: the package name without .TUnit (from src/<Package>.TUnit/), also in a template's path
+  (tests/{{Package}}.TUnit.SmokeTest/NuGet.config); {{domain}}: its documentation domain;
 - {{assertions-ci}}: the assertions-ci pin of the repository's own ci.yml, so every caller uses the same commit;
 - a line starting with {{core}} is kept only when the repository has a core package (src/<Package>/).
 Pinned versions of other actions (`uses: owner/action@<sha> # vX`) are not compared: Renovate updates them per
@@ -49,7 +50,8 @@ def _read(path: str) -> str:
 
 
 def template_files() -> list[str]:
-    """Every template, as the repository-relative path it is written to (forward slashes, no .template suffix)."""
+    """Every template, as the repository-relative path it is written to (forward slashes, no .template suffix), with
+    {{Package}} in the path still a placeholder (render_path fills it in)."""
     root = os.path.normpath(TEMPLATES)
     files = []
     for directory, _, names in os.walk(root):
@@ -63,6 +65,11 @@ def template_path(rel: str) -> str:
     """The template file of a repository-relative path."""
     path = os.path.join(TEMPLATES, rel)
     return path if os.path.isfile(path) else path + TEMPLATE_SUFFIX
+
+
+def render_path(rel: str, package: str) -> str:
+    """The repository-relative path of a template for one repository: {{Package}} becomes the package name."""
+    return rel.replace("{{Package}}", package)
 
 
 def read_template(rel: str) -> str:
@@ -135,14 +142,15 @@ def _tool_issues(root: str) -> list[str]:
 
 
 def _expected(root: str, package: str) -> 'tuple[dict[str, str], list[str]]':
-    """The rendered template of every file, and the issues of templates that could not be rendered."""
+    """The rendered template of every file by its path in the repository, and the issues of templates that could not
+    be rendered."""
     core, pin = has_core(root, package), assertions_ci_pin(root)
     expected, issues = {}, []
     for rel in template_files():
         try:
-            expected[rel] = render(read_template(rel), package, core, pin)
+            expected[render_path(rel, package)] = render(read_template(rel), package, core, pin)
         except ValueError as error:
-            issues.append(f"{rel}: cannot render the family template: {error}")
+            issues.append(f"{render_path(rel, package)}: cannot render the family template: {error}")
     return expected, issues
 
 

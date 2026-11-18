@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-18: the smoke test's NuGet.config is a family template
+
+Minor release. The nine copies of the smoke test's `NuGet.config` told a developer to run "the same pack command
+before restore": a pack under the version in the project file, which is a release's. Such a local build stays in the
+global packages folder under that version, and another repository's locked restore then fails with NU1403. The
+template packs with a new `99.0.0-local` version each time. A package repository adopts it with
+`family_sync.py --write` (see the README, "Adopting 1.8.0").
+
+### Added
+
+- **The smoke test's `NuGet.config` is a family template**, at `tests/{{Package}}.TUnit.SmokeTest/NuGet.config`. Its
+  comment gives the local commands: pack with `99.0.0-local.<timestamp>`, then run the smoke test with
+  `-p:SmokePackageVersion` set to that version. The source mapping is the one the copies had; a repository without a
+  core package maps only the adapter.
+- **`{{Package}}` in a template's path.** `family_sync.py` fills it in (`render_path`), so a template can live under
+  a folder named after the package.
+- **XML templates are checked to be well-formed**, with and without a core package. A comment with two hyphens in a
+  row (a `--force-evaluate` in the commands, for example) is not valid XML, and NuGet then cannot read the file.
+
 ## [1.7.0] - 2026-11-17: TUnit contract tests, every requirements line checked
 
 Minor release. A test per upstream TUnit fix the family contributed now runs on every pull request, so the pull
@@ -313,7 +332,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.7.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.4.0...v1.5.0

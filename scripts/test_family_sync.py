@@ -8,12 +8,15 @@ import runpy
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 import family_lint
 import family_sync as fs
 
 PIN = "0123456789abcdef0123456789abcdef01234567 # v9.9.9"
+SMOKE_CONFIG = "tests/{{Package}}.TUnit.SmokeTest/NuGet.config"
+DEMO_SMOKE_CONFIG = "tests/DemoAssertions.TUnit.SmokeTest/NuGet.config"
 CI = f"jobs:\n  ci:\n    uses: JohnVerheij/assertions-ci/.github/workflows/package-ci.yml@{PIN}\n"
 TOOLS = {"version": 1, "isRoot": True, "tools": {tool: {"version": "1.0.0", "commands": [tool]}
                                                   for tool in fs.REQUIRED_TOOLS}}
@@ -48,7 +51,8 @@ class _Repo(unittest.TestCase):
         _write(self.root, ".github/workflows/ci.yml", CI)
         _write(self.root, ".config/dotnet-tools.json", json.dumps(TOOLS))
         for rel in fs.template_files():
-            _write(self.root, rel, fs.render(_template(rel), "DemoAssertions", True, PIN))
+            text = fs.render(_template(rel), "DemoAssertions", True, PIN)
+            _write(self.root, fs.render_path(rel, "DemoAssertions"), text)
 
     def check(self):
         return fs.check(self.root, "DemoAssertions")
@@ -57,8 +61,36 @@ class _Repo(unittest.TestCase):
 class TemplateTests(unittest.TestCase):
     def test_templates_include_the_shared_files(self):
         files = fs.template_files()
-        for rel in (".gitignore", ".github/renovate.json", ".github/workflows/family-lint.yml", "docs/docfx.json"):
+        for rel in (".gitignore", ".github/renovate.json", ".github/workflows/family-lint.yml", "docs/docfx.json",
+                    SMOKE_CONFIG):
             self.assertIn(rel, files)
+
+    def test_template_paths_have_only_the_package_placeholder(self):
+        for rel in fs.template_files():
+            self.assertNotIn("{{", fs.render_path(rel, "DemoAssertions"), rel)
+
+    def test_xml_templates_are_well_formed_with_and_without_a_core(self):
+        # An XML comment must not contain two hyphens in a row, so a command line option such as --force-evaluate
+        # breaks the file: NuGet then fails to read the configuration.
+        xml = [rel for rel in fs.template_files() if rel.endswith((".config", ".props", ".targets", ".xml"))]
+        self.assertIn(SMOKE_CONFIG, xml)
+        for rel in xml:
+            for core in (True, False):
+                ET.fromstring(fs.render(_template(rel), "DemoAssertions", core, PIN).encode("utf-8"))
+
+    def test_smoke_config_maps_the_core_package_only_with_a_core(self):
+        with_core = fs.render(_template(SMOKE_CONFIG), "DemoAssertions", True, PIN)
+        without_core = fs.render(_template(SMOKE_CONFIG), "DemoAssertions", False, PIN)
+        self.assertIn('<package pattern="DemoAssertions" />', with_core)
+        self.assertNotIn('<package pattern="DemoAssertions" />', without_core)
+        self.assertIn('<package pattern="DemoAssertions.TUnit" />', without_core)
+
+    def test_smoke_config_packs_with_a_version_that_no_release_has(self):
+        text = fs.render(_template(SMOKE_CONFIG), "DemoAssertions", True, PIN)
+        self.assertIn("VERSION=99.0.0-local.$(date +%Y%m%d%H%M%S)", text)
+        self.assertIn("-p:Version=$VERSION", text)
+        self.assertIn("-p:SmokePackageVersion=$VERSION", text)
+        self.assertIn("cd tests/DemoAssertions.TUnit.SmokeTest", text)
 
     def test_templates_are_american_english(self):
         for rel in fs.template_files():
@@ -84,6 +116,13 @@ class TemplateTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
+    def test_package_placeholder_filled_in_a_path(self):
+        self.assertEqual(fs.render_path(SMOKE_CONFIG, "LogAssertions"),
+                         "tests/LogAssertions.TUnit.SmokeTest/NuGet.config")
+
+    def test_path_without_a_placeholder_unchanged(self):
+        self.assertEqual(fs.render_path("docs/docfx.json", "LogAssertions"), "docs/docfx.json")
+
     def test_placeholders_filled(self):
         text = fs.render("{{Package}} at https://{{domain}}/ uses @{{assertions-ci}}", "LogAssertions", True, PIN)
         self.assertEqual(text, f"LogAssertions at https://logassertions.dev/ uses @{PIN}")
@@ -167,6 +206,24 @@ class CheckTests(_Repo):
         os.remove(os.path.join(self.root, "LICENSE"))
         self.assertEqual(self.check(), ["LICENSE: missing (family template)"])
 
+    def test_missing_file_under_a_package_path_reported_at_its_path(self):
+        os.remove(os.path.join(self.root, *DEMO_SMOKE_CONFIG.split("/")))
+        self.assertEqual(self.check(), [DEMO_SMOKE_CONFIG + ": missing (family template)"])
+
+    def test_smoke_config_with_a_release_pack_advice_is_drift(self):
+        old = _read(self.root, DEMO_SMOKE_CONFIG).replace("-p:Version=$VERSION", "")
+        _write(self.root, DEMO_SMOKE_CONFIG, old)
+        issues = self.check()
+        self.assertEqual(len(issues), 1)
+        self.assertIn(DEMO_SMOKE_CONFIG + ": differs from the family template", issues[0])
+
+    def test_smoke_config_without_a_core_matches(self):
+        os.remove(os.path.join(self.root, "src", "DemoAssertions", "DemoAssertions.csproj"))
+        _write(self.root, DEMO_SMOKE_CONFIG, fs.render(_template(SMOKE_CONFIG), "DemoAssertions", False, PIN))
+        docfx = fs.render(_template("docs/docfx.json"), "DemoAssertions", False, PIN)
+        _write(self.root, "docs/docfx.json", docfx)
+        self.assertEqual(self.check(), [])
+
     def test_changed_file_reported_with_line(self):
         _write(self.root, ".gitignore", _read(self.root, ".gitignore").replace("bld/", "build/"))
         issues = self.check()
@@ -235,6 +292,13 @@ class WriteTests(_Repo):
         _write(self.root, rel, _read(self.root, rel).replace(PIN, "f" * 40 + " # v1.3.0"))
         self.assertEqual(fs.write(self.root, "DemoAssertions"), ["wrote " + rel])
         self.assertIn(PIN, _read(self.root, rel))
+        self.assertEqual(self.check(), [])
+
+    def test_write_creates_a_file_under_a_package_path(self):
+        os.remove(os.path.join(self.root, *DEMO_SMOKE_CONFIG.split("/")))
+        os.rmdir(os.path.join(self.root, "tests", "DemoAssertions.TUnit.SmokeTest"))
+        self.assertEqual(fs.write(self.root, "DemoAssertions"), ["wrote " + DEMO_SMOKE_CONFIG])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "tests", "{{Package}}.TUnit.SmokeTest")))
         self.assertEqual(self.check(), [])
 
     def test_write_refuses_without_a_pin(self):
