@@ -16,9 +16,9 @@
   <ItemGroup>
     <!-- Exact versions on purpose: Renovate proposes each new TUnit release as a pull request, and this project
          shows whether a fix we contributed has regressed. All TUnit packages move together. -->
-    <PackageReference Include="TUnit" Version="1.86.6" />
-    <PackageReference Include="TUnit.Mocks" Version="1.86.6" />
-    <PackageReference Include="TUnit.FsCheck" Version="1.86.6" />
+    <PackageReference Include="TUnit" Version="1.87.12" />
+    <PackageReference Include="TUnit.Mocks" Version="1.87.12" />
+    <PackageReference Include="TUnit.FsCheck" Version="1.87.12" />
   </ItemGroup>
 
 </Project>
