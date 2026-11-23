@@ -386,6 +386,12 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
    and gives the smoke test that version (see [README code samples](#readme-code-samples) for why). The source
    mapping is unchanged.
 
+### Adopting 1.9.0 in a package repository
+
+Move the pins to the 1.9.0 commit (or take Renovate's digest pull request). Nothing else changes; a repository with a
+source generator project (`<IsRoslynComponent>true</IsRoslynComponent>`, netstandard2.0) passes the lint from this
+version on.
+
 ## Using `dependency-graph.yml`
 
 GitHub's dependency graph doesn't resolve centrally managed NuGet versions: the static parse of the csproj files

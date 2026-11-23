@@ -15,8 +15,9 @@ generator only from `netstandard2.0`.
 
 ### Changed
 
-- **`family_lint.py`, target frameworks:** a project with `<IsRoslynComponent>true</IsRoslynComponent>` must target
-  `netstandard2.0` instead of the adapter's frameworks. Every other project is checked as before.
+- **`family_lint.py`, target frameworks:** a project with `<IsRoslynComponent>true</IsRoslynComponent>` (without a
+  condition) must target `netstandard2.0` instead of the adapter's frameworks. Every other project is checked as before.
+  A package repository adopts it by moving its pins (see the README, "Adopting 1.9.0").
 
 ## [1.8.0] - 2026-11-18: the smoke test's NuGet.config is a family template
 
@@ -343,7 +344,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.8.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0

@@ -424,7 +424,7 @@ class FrameworkTests(_Base):
     def test_roslyn_component_targets_netstandard20(self):
         _write(self.dir, "src/GrpcAssertions.Generator/GrpcAssertions.Generator.csproj",
                "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<IsRoslynComponent> true </IsRoslynComponent></PropertyGroup></Project>")
+               "<IsRoslynComponent>true</IsRoslynComponent></PropertyGroup></Project>")
         self.assertEqual(self.repo(), [])
 
     def test_roslyn_component_with_other_frameworks_flagged(self):
@@ -435,16 +435,20 @@ class FrameworkTests(_Base):
                                        "targets netstandard2.0, the target the C# compiler loads it from; it targets "
                                        "net10.0;net11.0"])
 
-    def test_commented_or_false_roslyn_component_is_an_ordinary_project(self):
+    def test_commented_false_or_conditioned_roslyn_component_is_an_ordinary_project(self):
         _write(self.dir, "src/A/A.csproj",
                "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
                "<!-- <IsRoslynComponent>true</IsRoslynComponent> --></PropertyGroup></Project>")
         _write(self.dir, "src/B/B.csproj",
                "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
                "<IsRoslynComponent>false</IsRoslynComponent></PropertyGroup></Project>")
+        _write(self.dir, "src/C/C.csproj",
+               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
+               "<IsRoslynComponent Condition=\"'$(X)' == ''\">true</IsRoslynComponent></PropertyGroup></Project>")
         self.assertEqual(self.repo(), [
             "src/A/A.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
             "src/B/B.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
+            "src/C/C.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
         ])
 
     def test_project_in_another_order_is_fine(self):

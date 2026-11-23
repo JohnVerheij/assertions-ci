@@ -10,8 +10,9 @@ Checks, each exit 1 on a violation:
   baselines excepted);
 - README facts: the TUnit minimum in every README equals the central TUnit version, the adapter README names every
   sibling package, and the first row of the SECURITY.md supported-versions table is the current version line;
-- target frameworks: every project lists the target frameworks of the adapter project, and the .NET badge and the
-  requirements line of every README name exactly those .NET versions;
+- target frameworks: every project lists the target frameworks of the adapter project (a Roslyn component targets
+  netstandard2.0 instead), and the .NET badge and the requirements line of every README name exactly those .NET
+  versions;
 - the shared files match the family templates (family_sync.py check: templates/package/, obsolete files, local tools).
 """
 import glob
@@ -189,7 +190,7 @@ VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # commented-out elements are removed first).
 FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
 XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-ROSLYN_COMPONENT_RE = re.compile(r"<IsRoslynComponent>\s*true\s*</IsRoslynComponent>", re.IGNORECASE)
+ROSLYN_COMPONENT_RE = re.compile(r"<IsRoslynComponent>true</IsRoslynComponent>", re.IGNORECASE)
 # A source generator or analyzer project: the C# compiler loads it, so it targets netstandard2.0, whatever the packages
 # target.
 ROSLYN_FRAMEWORKS = ["netstandard2.0"]
@@ -337,7 +338,8 @@ def _net_versions(frameworks: list[str]) -> list[str]:
 
 
 def is_roslyn_component(path: str) -> bool:
-    """Whether a project file sets IsRoslynComponent to true outside a comment: a source generator or analyzer."""
+    """Whether a project file sets IsRoslynComponent to true, without a condition, outside a comment: a source generator
+    or analyzer."""
     return ROSLYN_COMPONENT_RE.search(XML_COMMENT_RE.sub("", _read(path))) is not None
 
 
