@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-23: a Roslyn component targets netstandard2.0
+
+Minor release. The target-framework lint asked every project of a repository for the adapter's frameworks, so a
+source generator shipped inside a package (LogAssertions 0.17.0 is the first) failed it: the C# compiler loads a
+generator only from `netstandard2.0`.
+
+### Changed
+
+- **`family_lint.py`, target frameworks:** a project with `<IsRoslynComponent>true</IsRoslynComponent>` must target
+  `netstandard2.0` instead of the adapter's frameworks. Every other project is checked as before.
+
 ## [1.8.0] - 2026-11-18: the smoke test's NuGet.config is a family template
 
 Minor release. The nine copies of the smoke test's `NuGet.config` told a developer to run "the same pack command

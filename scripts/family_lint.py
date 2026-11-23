@@ -189,6 +189,10 @@ VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # commented-out elements are removed first).
 FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
 XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+ROSLYN_COMPONENT_RE = re.compile(r"<IsRoslynComponent>\s*true\s*</IsRoslynComponent>", re.IGNORECASE)
+# A source generator or analyzer project: the C# compiler loads it, so it targets netstandard2.0, whatever the packages
+# target.
+ROSLYN_FRAMEWORKS = ["netstandard2.0"]
 NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
 # The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
 NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
@@ -332,13 +336,24 @@ def _net_versions(frameworks: list[str]) -> list[str]:
     return versions
 
 
+def is_roslyn_component(path: str) -> bool:
+    """Whether a project file sets IsRoslynComponent to true outside a comment: a source generator or analyzer."""
+    return ROSLYN_COMPONENT_RE.search(XML_COMMENT_RE.sub("", _read(path))) is not None
+
+
 def _project_issues(root: str, expected: list[str], adapter: str) -> list[str]:
     out = []
     for path in sorted(glob.glob(os.path.join(root, "src", "**", "*.csproj"), recursive=True)
                        + glob.glob(os.path.join(root, "tests", "**", "*.csproj"), recursive=True)):
         name = os.path.relpath(path, root).replace(os.sep, "/")
         frameworks = project_frameworks(path)
-        if name != adapter and frameworks is not None and set(frameworks) != set(expected):
+        if name == adapter or frameworks is None:
+            continue
+        if is_roslyn_component(path):
+            if set(frameworks) != set(ROSLYN_FRAMEWORKS):
+                out.append(f"{name}: a Roslyn component targets {';'.join(ROSLYN_FRAMEWORKS)}, the target the C# "
+                           f"compiler loads it from; it targets {';'.join(frameworks)}")
+        elif set(frameworks) != set(expected):
             out.append(f"{name}: target frameworks {';'.join(frameworks)} differ from the adapter's {';'.join(expected)}")
     return out
 
