@@ -111,13 +111,14 @@ version's SDK for its runtime, and `global.json` keeps selecting the pinned one.
 .NET 11 SDK, a repository adds `net11.0` next to `net10.0` by changing its projects only. A test project must target
 `netX.Y` frameworks only.
 
-Every project of a repository lists the target frameworks of the adapter project, except a Roslyn component (a
-project that sets `<IsRoslynComponent>true</IsRoslynComponent>` with no condition on it or on its property group: a
-source generator or analyzer that ships inside a package), which targets `netstandard2.0`, the target the C# compiler
-loads it from. The `.NET` badge and every
+Every project of a repository lists the target frameworks of the adapter project, except a Roslyn component: a
+source generator or analyzer that ships inside a package, which targets `netstandard2.0`, the target the C# compiler
+loads it from. A project is one when its last unconditioned declaration of the property, in an unconditioned property
+group directly under the project, is `<IsRoslynComponent>true</IsRoslynComponent>`. The `.NET` badge and every
 requirements line of every README (a line with the `**Requirements:**` label, a line that starts with a plain
-`Requirements:`, or a line with `TUnit X.Y.Z or later`) name
-exactly those .NET versions (the root and adapter READMEs must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the lint.
+`Requirements:`, or a line with `TUnit X.Y.Z or later`) name exactly those .NET versions (the root and adapter READMEs
+must have both). `family_lint.py` checks this, so a framework added to the projects but not to a README fails the
+lint.
 Per framework, the .NET release gate below checks that no shipped runtime, ASP.NET Core or extensions package comes
 from a newer .NET release.
 
@@ -389,9 +390,10 @@ the drift in its lint run. Run `family_sync.py --write` on that pull request's b
 
 ### Adopting 1.9.0 in a package repository
 
-Move the pins to the 1.9.0 commit (or take Renovate's digest pull request). Nothing else changes; a repository with a
-source generator project (`<IsRoslynComponent>true</IsRoslynComponent>`, netstandard2.0) passes the lint from this
-version on.
+1. Move the pins to the 1.9.0 commit (or take Renovate's digest pull request).
+2. Run `family_sync.py --write`. It writes `CONVENTIONS.md` from the template, which now names the exception for a
+   Roslyn component. A repository with a source generator or analyzer project (`<IsRoslynComponent>true</IsRoslynComponent>`,
+   `netstandard2.0`) passes the lint from this version on.
 
 ## Using `dependency-graph.yml`
 

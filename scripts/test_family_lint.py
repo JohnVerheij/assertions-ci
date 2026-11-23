@@ -421,21 +421,39 @@ class FrameworkTests(_Base):
         self.assertEqual(self.repo(), ["tests/GrpcAssertions.Tests/GrpcAssertions.Tests.csproj: target frameworks "
                                        "net10.0 differ from the adapter's net10.0;net11.0"])
 
-    def test_roslyn_component_targets_netstandard20(self):
-        _write(self.dir, "src/GrpcAssertions.Generator/GrpcAssertions.Generator.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<IsRoslynComponent>true</IsRoslynComponent></PropertyGroup></Project>")
-        self.assertEqual(self.repo(), [])
+    def roslyn(self, body: str) -> list[str]:
+        """Lint a repository with one more project, src/A/A.csproj, that targets netstandard2.0 and has the given body
+        after its framework."""
+        _write(self.dir, "src/A/A.csproj",
+               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup>" + body
+               + "</Project>")
+        return self.repo()
 
-    def test_roslyn_component_with_whitespace_in_the_tag_or_a_namespace(self):
-        _write(self.dir, "src/GrpcAssertions.Generator/GrpcAssertions.Generator.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<IsRoslynComponent >TRUE</IsRoslynComponent ></PropertyGroup></Project>")
-        _write(self.dir, "src/GrpcAssertions.Analyzer/GrpcAssertions.Analyzer.csproj",
+    ORDINARY = ["src/A/A.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0"]
+
+    def test_roslyn_component_targets_netstandard20(self):
+        self.assertEqual(self.roslyn("<PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"), [])
+
+    def test_roslyn_component_name_and_value_ignore_case_and_tag_whitespace(self):
+        self.assertEqual(self.roslyn("<PropertyGroup><isroslyncomponent >TRUE</isroslyncomponent ></PropertyGroup>"), [])
+
+    def test_roslyn_component_with_the_msbuild_namespace(self):
+        _write(self.dir, "src/A/A.csproj",
                "<Project xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\"><PropertyGroup>"
                "<TargetFramework>netstandard2.0</TargetFramework><IsRoslynComponent>true</IsRoslynComponent>"
                "</PropertyGroup></Project>")
         self.assertEqual(self.repo(), [])
+
+    def test_roslyn_component_with_an_empty_condition(self):
+        self.assertEqual(self.roslyn("<PropertyGroup Condition=\"\"><IsRoslynComponent Condition=\"\">true"
+                                     "</IsRoslynComponent></PropertyGroup>"), [])
+
+    def test_last_unconditional_roslyn_component_declaration_wins(self):
+        self.assertEqual(self.roslyn("<PropertyGroup><IsRoslynComponent>false</IsRoslynComponent></PropertyGroup>"
+                                     "<PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"), [])
+        self.assertEqual(self.roslyn("<PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"
+                                     "<PropertyGroup><IsRoslynComponent>false</IsRoslynComponent></PropertyGroup>"),
+                         self.ORDINARY)
 
     def test_roslyn_component_with_other_frameworks_flagged(self):
         _write(self.dir, "src/GrpcAssertions.Generator/GrpcAssertions.Generator.csproj",
@@ -445,36 +463,39 @@ class FrameworkTests(_Base):
                                        "targets netstandard2.0, the target the C# compiler loads it from; it targets "
                                        "net10.0;net11.0"])
 
-    def test_commented_false_conditioned_or_malformed_roslyn_component_is_an_ordinary_project(self):
+    def test_values_other_than_true_are_an_ordinary_project(self):
+        for value in ["<IsRoslynComponent>false</IsRoslynComponent>", "<IsRoslynComponent />",
+                      "<IsRoslynComponent> true </IsRoslynComponent>", "<IsRoslynComponent>true<Foo /></IsRoslynComponent>",
+                      "<IsRoslynComponent>$(Generator)</IsRoslynComponent>",
+                      "<!-- <IsRoslynComponent>true</IsRoslynComponent> -->"]:
+            with self.subTest(value=value):
+                self.assertEqual(self.roslyn("<PropertyGroup>" + value + "</PropertyGroup>"), self.ORDINARY)
+
+    def test_conditioned_declarations_are_an_ordinary_project(self):
+        for body in ["<PropertyGroup><IsRoslynComponent Condition=\"'$(X)' == 'y'\">true</IsRoslynComponent>"
+                     "</PropertyGroup>",
+                     "<PropertyGroup Condition=\"'$(X)' == 'y'\"><IsRoslynComponent>true</IsRoslynComponent>"
+                     "</PropertyGroup>",
+                     "<PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"
+                     "<PropertyGroup><IsRoslynComponent Condition=\"'$(X)' == 'y'\">false</IsRoslynComponent>"
+                     "</PropertyGroup><PropertyGroup><IsRoslynComponent>false</IsRoslynComponent></PropertyGroup>"]:
+            with self.subTest(body=body):
+                self.assertEqual(self.roslyn(body), self.ORDINARY)
+
+    def test_declarations_outside_a_project_property_group_are_an_ordinary_project(self):
+        for body in ["<Choose><When Condition=\"'$(X)' == 'y'\"><PropertyGroup /></When><Otherwise><PropertyGroup>"
+                     "<IsRoslynComponent>true</IsRoslynComponent></PropertyGroup></Otherwise></Choose>",
+                     "<Target Name=\"T\"><PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"
+                     "</Target>",
+                     "<ItemGroup><None Include=\"x\"><IsRoslynComponent>true</IsRoslynComponent></None></ItemGroup>"]:
+            with self.subTest(body=body):
+                self.assertEqual(self.roslyn(body), self.ORDINARY)
+
+    def test_malformed_project_file_is_an_ordinary_project(self):
         _write(self.dir, "src/A/A.csproj",
                "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<!-- <IsRoslynComponent>true</IsRoslynComponent> --></PropertyGroup></Project>")
-        _write(self.dir, "src/B/B.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<IsRoslynComponent>false</IsRoslynComponent></PropertyGroup></Project>")
-        _write(self.dir, "src/C/C.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
-               "<IsRoslynComponent Condition=\"'$(X)' == ''\">true</IsRoslynComponent></PropertyGroup></Project>")
-        _write(self.dir, "src/D/D.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup>"
-               "<PropertyGroup Condition=\"'$(Configuration)' == 'Debug'\"><IsRoslynComponent>true</IsRoslynComponent>"
-               "</PropertyGroup></Project>")
-        _write(self.dir, "src/E/E.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup>"
-               "<Choose><Otherwise><PropertyGroup><IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>"
-               "</Otherwise></Choose><Target Name=\"T\"><PropertyGroup><IsRoslynComponent>true</IsRoslynComponent>"
-               "</PropertyGroup></Target></Project>")
-        _write(self.dir, "src/F/F.csproj",
-               "<Project><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework>"
                "<IsRoslynComponent>true</IsRoslynComponent></PropertyGroup>")
-        self.assertEqual(self.repo(), [
-            "src/A/A.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-            "src/B/B.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-            "src/C/C.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-            "src/D/D.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-            "src/E/E.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-            "src/F/F.csproj: target frameworks netstandard2.0 differ from the adapter's net10.0;net11.0",
-        ])
+        self.assertEqual(self.repo(), self.ORDINARY)
 
     def test_project_in_another_order_is_fine(self):
         _write(self.dir, "src/GrpcAssertions/GrpcAssertions.csproj", FRAMEWORKS_CSPROJ.format(" net11.0; net10.0; "))

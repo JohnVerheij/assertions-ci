@@ -194,9 +194,6 @@ XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # A source generator or analyzer project: the C# compiler loads it, so it targets netstandard2.0, whatever the packages
 # target.
 ROSLYN_FRAMEWORKS = ["netstandard2.0"]
-# Elements whose content MSBuild does not evaluate unconditionally: a Choose picks one branch, and a Target sets its
-# properties only when it runs.
-CONDITIONAL_CONTAINERS = {"Choose", "Target"}
 NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
 # The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
 NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
@@ -341,23 +338,36 @@ def _net_versions(frameworks: list[str]) -> list[str]:
 
 
 def is_roslyn_component(path: str) -> bool:
-    """Whether a project file sets IsRoslynComponent to true (MSBuild compares it ignoring case) unconditionally: no
-    Condition on the element or on any element around it, and not inside a Choose or a Target. A source generator or
-    analyzer. A file that is not well-formed XML is an ordinary project."""
+    """Whether the project file itself sets the IsRoslynComponent property to true unconditionally: a source generator
+    or analyzer. Only a property declaration counts, a direct child of a PropertyGroup that is itself a direct child of
+    the Project, with no Condition on either (an empty Condition is none, as in MSBuild). Item metadata of the same name,
+    a setting inside a Choose or a Target, and a conditioned declaration do not count; conditions are not evaluated, so
+    a conditioned declaration is skipped even where its condition would hold. As in MSBuild, the last declaration wins,
+    the name compares ignoring case, and the value is true when it is exactly `true` ignoring case (`'$(IsRoslynComponent)'
+    == 'true'` in the Roslyn targets). Imported files are not read, as for the target frameworks. A file that is not
+    well-formed XML is an ordinary project. The files are the repository's own project files."""
     try:
         root = ElementTree.fromstring(_read(path))
     except ElementTree.ParseError:
         return False
-    return _sets_roslyn_component(root, conditioned=False)
+    value = ""
+    for group in root:
+        if _local_name(group) != "PropertyGroup" or _conditioned(group):
+            continue
+        for prop in group:
+            if _local_name(prop).lower() == "isroslyncomponent" and not _conditioned(prop):
+                value = "" if len(prop) else prop.text or ""
+    return value.lower() == "true"
 
 
-def _sets_roslyn_component(element: ElementTree.Element, conditioned: bool) -> bool:
-    """Whether an element, or one inside it, sets IsRoslynComponent to true without a condition."""
-    name = element.tag.rsplit("}", 1)[-1]
-    conditioned = conditioned or "Condition" in element.attrib or name in CONDITIONAL_CONTAINERS
-    if name == "IsRoslynComponent":
-        return not conditioned and (element.text or "").lower() == "true"
-    return any(_sets_roslyn_component(child, conditioned) for child in element)
+def _conditioned(element: ElementTree.Element) -> bool:
+    """Whether an element has a Condition; MSBuild treats an empty one as none."""
+    return element.get("Condition", "") != ""
+
+
+def _local_name(element: ElementTree.Element) -> str:
+    """An element's name without its XML namespace (older project files declare the MSBuild namespace)."""
+    return element.tag.rsplit("}", 1)[-1]
 
 
 def _project_issues(root: str, expected: list[str], adapter: str) -> list[str]:
@@ -404,8 +414,9 @@ def _readme_net_issues(name: str, text: str, versions: list[str], required: bool
 
 
 def lint_frameworks(root: str, package: str) -> list[str]:
-    """Target frameworks that drift by hand: every project lists the adapter's, and every README's .NET badge and
-    requirements line name the same .NET versions. Nothing to compare when the adapter project declares none."""
+    """Target frameworks that drift by hand: every project lists the adapter's (a Roslyn component targets
+    netstandard2.0 instead), and every README's .NET badge and requirements line name the same .NET versions. Nothing to
+    compare when the adapter project declares none."""
     adapter = f"src/{package}.TUnit/{package}.TUnit.csproj"
     path = os.path.join(root, *adapter.split("/"))
     expected = project_frameworks(path) if os.path.isfile(path) else None
