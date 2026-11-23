@@ -10,8 +10,9 @@ Checks, each exit 1 on a violation:
   baselines excepted);
 - README facts: the TUnit minimum in every README equals the central TUnit version, the adapter README names every
   sibling package, and the first row of the SECURITY.md supported-versions table is the current version line;
-- target frameworks: every project lists the target frameworks of the adapter project, and the .NET badge and the
-  requirements line of every README name exactly those .NET versions;
+- target frameworks: every project lists the target frameworks of the adapter project (a Roslyn component targets
+  netstandard2.0 instead), and the .NET badge and the requirements line of every README name exactly those .NET
+  versions;
 - the shared files match the family templates (family_sync.py check: templates/package/, obsolete files, local tools).
 """
 import glob
@@ -20,6 +21,7 @@ import re
 import subprocess
 import sys
 import urllib.parse
+import xml.etree.ElementTree as ElementTree
 
 # The sibling module family_sync, also when Python runs isolated (-I), which leaves the script's folder off sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -189,6 +191,9 @@ VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # commented-out elements are removed first).
 FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
 XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+# A source generator or analyzer project: the C# compiler loads it, so it targets netstandard2.0, whatever the packages
+# target.
+ROSLYN_FRAMEWORKS = ["netstandard2.0"]
 NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
 # The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
 NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
@@ -332,13 +337,52 @@ def _net_versions(frameworks: list[str]) -> list[str]:
     return versions
 
 
+def is_roslyn_component(path: str) -> bool:
+    """Whether the project file itself sets the IsRoslynComponent property to true unconditionally: a source generator
+    or analyzer. Only a property declaration counts, a direct child of a PropertyGroup that is itself a direct child of
+    the Project, with no Condition on either (an empty Condition is none, as in MSBuild). Item metadata of the same name,
+    a setting inside a Choose or a Target, and a conditioned declaration do not count; conditions are not evaluated, so
+    a conditioned declaration is skipped even where its condition would hold. As in MSBuild, the last declaration wins,
+    the name compares ignoring case, and the value is true when it is exactly `true` ignoring case (`'$(IsRoslynComponent)'
+    == 'true'` in the Roslyn targets). Imported files are not read, as for the target frameworks. A file that is not
+    well-formed XML is an ordinary project. The files are the repository's own project files."""
+    try:
+        root = ElementTree.fromstring(_read(path))
+    except ElementTree.ParseError:
+        return False
+    value = ""
+    for group in root:
+        if _local_name(group) != "PropertyGroup" or _conditioned(group):
+            continue
+        for prop in group:
+            if _local_name(prop).lower() == "isroslyncomponent" and not _conditioned(prop):
+                value = "" if len(prop) else prop.text or ""
+    return value.lower() == "true"
+
+
+def _conditioned(element: ElementTree.Element) -> bool:
+    """Whether an element has a Condition; MSBuild treats an empty one as none."""
+    return element.get("Condition", "") != ""
+
+
+def _local_name(element: ElementTree.Element) -> str:
+    """An element's name without its XML namespace (older project files declare the MSBuild namespace)."""
+    return element.tag.rsplit("}", 1)[-1]
+
+
 def _project_issues(root: str, expected: list[str], adapter: str) -> list[str]:
     out = []
     for path in sorted(glob.glob(os.path.join(root, "src", "**", "*.csproj"), recursive=True)
                        + glob.glob(os.path.join(root, "tests", "**", "*.csproj"), recursive=True)):
         name = os.path.relpath(path, root).replace(os.sep, "/")
         frameworks = project_frameworks(path)
-        if name != adapter and frameworks is not None and set(frameworks) != set(expected):
+        if name == adapter or frameworks is None:
+            continue
+        if is_roslyn_component(path):
+            if set(frameworks) != set(ROSLYN_FRAMEWORKS):
+                out.append(f"{name}: a Roslyn component targets {';'.join(ROSLYN_FRAMEWORKS)}, the target the C# "
+                           f"compiler loads it from; it targets {';'.join(frameworks)}")
+        elif set(frameworks) != set(expected):
             out.append(f"{name}: target frameworks {';'.join(frameworks)} differ from the adapter's {';'.join(expected)}")
     return out
 
@@ -370,8 +414,9 @@ def _readme_net_issues(name: str, text: str, versions: list[str], required: bool
 
 
 def lint_frameworks(root: str, package: str) -> list[str]:
-    """Target frameworks that drift by hand: every project lists the adapter's, and every README's .NET badge and
-    requirements line name the same .NET versions. Nothing to compare when the adapter project declares none."""
+    """Target frameworks that drift by hand: every project lists the adapter's (a Roslyn component targets
+    netstandard2.0 instead), and every README's .NET badge and requirements line name the same .NET versions. Nothing to
+    compare when the adapter project declares none."""
     adapter = f"src/{package}.TUnit/{package}.TUnit.csproj"
     path = os.path.join(root, *adapter.split("/"))
     expected = project_frameworks(path) if os.path.isfile(path) else None

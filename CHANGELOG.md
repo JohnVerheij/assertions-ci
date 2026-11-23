@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-23: a Roslyn component targets netstandard2.0
+
+Minor release. The target-framework lint asked every project of a repository for the adapter's frameworks, so a
+source generator shipped inside a package (LogAssertions 0.17.0 is the first) failed it: the C# compiler loads a
+generator only from `netstandard2.0`. A package repository adopts it by moving its pins and running
+`family_sync.py --write` (see the README, "Adopting 1.9.0").
+
+### Changed
+
+- **`family_lint.py`, target frameworks:** a project whose project file sets `<IsRoslynComponent>true</IsRoslynComponent>`
+  in a property group directly under `<Project>`, with no Condition on the property or the group, must target
+  `netstandard2.0` instead of the adapter's frameworks. As in MSBuild, the last such declaration wins and the name and
+  value compare ignoring case. Every other project is checked as before.
+- **`CONVENTIONS.md` template:** the target-frameworks rule names the exception for a Roslyn component.
+
 ## [1.8.0] - 2026-11-18: the smoke test's NuGet.config is a family template
 
 Minor release. The nine copies of the smoke test's `NuGet.config` told a developer to run "the same pack command
@@ -332,7 +347,8 @@ Linux and the Codecov OIDC upload.
 - **actionlint** and **script test** workflows; zizmor and CodeQL now run on every change, so all four can be
   required status checks.
 
-[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.8.0...HEAD
+[unreleased]: https://github.com/JohnVerheij/assertions-ci/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JohnVerheij/assertions-ci/compare/v1.5.0...v1.6.0
