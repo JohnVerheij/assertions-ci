@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import urllib.parse
+import xml.etree.ElementTree as ElementTree
 
 # The sibling module family_sync, also when Python runs isolated (-I), which leaves the script's folder off sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -190,10 +191,12 @@ VERSION_LINE_RE = re.compile(r"`(\d+\.\d+)\.x`")
 # commented-out elements are removed first).
 FRAMEWORKS_RE = re.compile(r"<(TargetFrameworks?)>([^<]*)</\1>")
 XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-ROSLYN_COMPONENT_RE = re.compile(r"<IsRoslynComponent>true</IsRoslynComponent>", re.IGNORECASE)
 # A source generator or analyzer project: the C# compiler loads it, so it targets netstandard2.0, whatever the packages
 # target.
 ROSLYN_FRAMEWORKS = ["netstandard2.0"]
+# Elements whose content MSBuild does not evaluate unconditionally: a Choose picks one branch, and a Target sets its
+# properties only when it runs.
+CONDITIONAL_CONTAINERS = {"Choose", "Target"}
 NET_FRAMEWORK_RE = re.compile(r"^net(\d+)\.(\d+)$")
 # The shields.io badge that names the .NET versions: ![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4.svg)
 NET_BADGE_RE = re.compile(r"img\.shields\.io/badge/\.NET-(.+?)-(?:[0-9A-Fa-f]{6}|[a-z]+)(?:\.svg)?(?=[)?\"'\s]|$)")
@@ -338,9 +341,23 @@ def _net_versions(frameworks: list[str]) -> list[str]:
 
 
 def is_roslyn_component(path: str) -> bool:
-    """Whether a project file sets IsRoslynComponent to true, without a condition, outside a comment: a source generator
-    or analyzer."""
-    return ROSLYN_COMPONENT_RE.search(XML_COMMENT_RE.sub("", _read(path))) is not None
+    """Whether a project file sets IsRoslynComponent to true (MSBuild compares it ignoring case) unconditionally: no
+    Condition on the element or on any element around it, and not inside a Choose or a Target. A source generator or
+    analyzer. A file that is not well-formed XML is an ordinary project."""
+    try:
+        root = ElementTree.fromstring(_read(path))
+    except ElementTree.ParseError:
+        return False
+    return _sets_roslyn_component(root, conditioned=False)
+
+
+def _sets_roslyn_component(element: ElementTree.Element, conditioned: bool) -> bool:
+    """Whether an element, or one inside it, sets IsRoslynComponent to true without a condition."""
+    name = element.tag.rsplit("}", 1)[-1]
+    conditioned = conditioned or "Condition" in element.attrib or name in CONDITIONAL_CONTAINERS
+    if name == "IsRoslynComponent":
+        return not conditioned and (element.text or "").lower() == "true"
+    return any(_sets_roslyn_component(child, conditioned) for child in element)
 
 
 def _project_issues(root: str, expected: list[str], adapter: str) -> list[str]:

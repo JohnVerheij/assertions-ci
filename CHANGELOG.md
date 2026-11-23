@@ -15,8 +15,9 @@ generator only from `netstandard2.0`.
 
 ### Changed
 
-- **`family_lint.py`, target frameworks:** a project with `<IsRoslynComponent>true</IsRoslynComponent>` (without a
-  condition) must target `netstandard2.0` instead of the adapter's frameworks. Every other project is checked as before.
+- **`family_lint.py`, target frameworks:** a project that sets `<IsRoslynComponent>true</IsRoslynComponent>` without a
+  condition (none on the element or on its property group, and not inside a `Choose` or a `Target`) must target
+  `netstandard2.0` instead of the adapter's frameworks. Every other project is checked as before.
   A package repository adopts it by moving its pins (see the README, "Adopting 1.9.0").
 
 ## [1.8.0] - 2026-11-18: the smoke test's NuGet.config is a family template
