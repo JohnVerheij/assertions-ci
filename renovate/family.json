@@ -105,6 +105,18 @@
         "major"
       ],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Roslyn components: a source generator or analyzer project (src/*.Generator, src/*.Analyzers) references Microsoft.CodeAnalysis below the central version on purpose, because a compiler loads such a component only when its Roslyn version is at or below the compiler's own, and the oldest supported SDK (.NET 10) ships Roslyn 5.0. An update would pass CI, which builds with the newest SDK, and drop the component for every older SDK, so these updates are off. Raise the version by hand when the oldest supported SDK moves. The central version, which the test projects use, stays automatic.",
+      "matchFileNames": [
+        "src/*.Generator/*.csproj",
+        "src/*.Analyzers/*.csproj"
+      ],
+      "matchPackageNames": [
+        "Microsoft.CodeAnalysis.Common",
+        "Microsoft.CodeAnalysis.CSharp"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [

@@ -282,7 +282,7 @@ application entry point and a test host, which is more than a contract test shou
 
 It reads the preset from this repository's default branch, so a Renovate change lands once for all repositories.
 Besides the shared rules (semver for NuGet, the TUnit group, auto-merge of non-major updates, the commit conventions),
-it has three family rules:
+it has four family rules:
 - **TUnit version literals:** the `TUnit X.Y.Z or later` line of every README, the smoke test's `TUnit` reference and
   the bug-report form move in the same pull request as `Directory.Packages.props`.
 - **Packages that ship one version per .NET release** (`Microsoft.AspNetCore.*`, `Microsoft.Bcl.*`,
@@ -293,6 +293,12 @@ it has three family rules:
   only these names.
 - **The SDK and SourceLink** (`dotnet-sdk`, `Microsoft.SourceLink.GitHub`): a major update waits for approval in the
   Dependency Dashboard, because it comes with a new .NET release.
+- **Roslyn components** (`src/*.Generator/*.csproj`, `src/*.Analyzers/*.csproj`): no updates of
+  `Microsoft.CodeAnalysis.Common` and `Microsoft.CodeAnalysis.CSharp`. Such a project references Roslyn below the
+  central version on purpose: a compiler loads it only when that version is at or below its own, and the oldest
+  supported SDK (.NET 10) ships Roslyn 5.0. An update would pass CI, which builds with the newest SDK, and drop the
+  component for every older SDK; the version is raised by hand when the oldest supported SDK moves. The central
+  version, which the test projects use, stays automatic.
 
 ## Family templates
 

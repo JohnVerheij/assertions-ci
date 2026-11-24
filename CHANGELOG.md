@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renovate preset:** no updates of `Microsoft.CodeAnalysis.Common` and `Microsoft.CodeAnalysis.CSharp` in a Roslyn
+  component (`src/*.Generator/*.csproj`, `src/*.Analyzers/*.csproj`), which references Roslyn below the central version
+  so that the compiler of the oldest supported SDK loads it. An update passed CI, which builds with the newest SDK, and
+  would have dropped the component for every older SDK. The central version stays automatic.
+
 ## [1.9.0] - 2026-11-23: a Roslyn component targets netstandard2.0
 
 Minor release. The target-framework lint asked every project of a repository for the adapter's frameworks, so a
